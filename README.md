@@ -103,7 +103,7 @@ critical load Ncr = λcr·|N|, its buckling length Lcr = π√(EI/Ncr) (Lf in Fr
 of the element alone, hinged at both ends; the properties give the same for the selected element. With the
 envelope, the combination with the smallest λcr is shown. The CSV export writes the modes' shapes. Each element is
 cut into 8 for the geometric stiffness (fewer past 25 elements), so λcr comes out a little above the exact value:
-by 0.003 % for a pinned column, 0.05 % for a fixed one. Only in the plane: out-of-plane and lateral-torsional
+by 0.003 % for a column pinned at both ends, 0.05 % for one fixed at both ends. Only in the plane: out-of-plane and lateral-torsional
 buckling are not checked. File › Examples has *Euler's column* (λcr = 1.6) and a *portal frame* that sways
 (λcr = 4); the *Warren truss* buckles at its end diagonals.
 
