@@ -29,15 +29,20 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
+import rdm.model.LoadCase;
+import rdm.model.Loading;
 import rdm.model.Node;
+import rdm.model.NodeLoad;
 import rdm.model.Structure;
 import rdm.model.Support;
 import rdm.solver.ElementResult;
+import rdm.solver.Envelope;
 import rdm.solver.Solution;
 
 /**
  * The drawing: world in metres (x right, y up), screen in pixels (y down). Draws the structure, its supports
- * and loads, and the results (deformed shape, N/T/Mf diagram, reactions); takes the tools' clicks.
+ * and the loads of the case or combination shown, and the results (deformed shape, N/T/Mf diagram, reactions; for
+ * the envelope, each diagram's largest and smallest values and the reactions' ranges); takes the tools' clicks.
  * Right or middle drag pans, the wheel zooms.
  */
 final class StructureCanvas extends JPanel {
@@ -299,31 +304,39 @@ final class StructureCanvas extends JPanel {
         app.select(node);
       }
       case FORCE -> {
-        if (node == null && el != null) {
-          addOnElement(el, LoadDialog.force(this, el, new ElementLoad.Force(along(el, (Double) hit[1]), 0, -10e3, false)));
+        if (node == null && el == null) return;
+        LoadCase c = app.caseForLoads();
+        if (c == null) return;
+        if (node == null) {
+          addOnElement(el, LoadDialog.force(this, el, new ElementLoad.Force(c, along(el, (Double) hit[1]), 0, -10e3, false)));
           return;
         }
-        if (node == null) return;
-        double[] v = ask(tr("canvas.nodeForce", s.number(node)), new String[] {"Fx (kN)", "Fy (kN)"}, new double[] {node.fx / 1e3, node.fy / 1e3});
+        NodeLoad now = node.load(c);
+        double[] v = ask(tr("canvas.nodeForce", s.number(node), c.name), new String[] {"Fx (kN)", "Fy (kN)"}, new double[] {now.fx / 1e3, now.fy / 1e3});
         if (v != null) app.edit(() -> {
-          node.fx = v[0] * 1e3;
-          node.fy = v[1] * 1e3;
+          NodeLoad l = node.loadIn(c);
+          l.fx = v[0] * 1e3;
+          l.fy = v[1] * 1e3;
         });
         app.select(node);
       }
       case MOMENT -> {
-        if (node == null && el != null) {
-          addOnElement(el, LoadDialog.couple(this, el, new ElementLoad.Couple(along(el, (Double) hit[1]), 10e3)));
+        if (node == null && el == null) return;
+        LoadCase c = app.caseForLoads();
+        if (c == null) return;
+        if (node == null) {
+          addOnElement(el, LoadDialog.couple(this, el, new ElementLoad.Couple(c, along(el, (Double) hit[1]), 10e3)));
           return;
         }
-        if (node == null) return;
-        double[] v = ask(tr("canvas.nodeMoment", s.number(node)), new String[] {tr("canvas.mz")}, new double[] {node.mz / 1e3});
-        if (v != null) app.edit(() -> node.mz = v[0] * 1e3);
+        double[] v = ask(tr("canvas.nodeMoment", s.number(node), c.name), new String[] {tr("canvas.mz")}, new double[] {node.load(c).mz / 1e3});
+        if (v != null) app.edit(() -> node.loadIn(c).mz = v[0] * 1e3);
         app.select(node);
       }
       case DISTRIBUTED -> {
         if (el == null) return;
-        addOnElement(el, LoadDialog.distributed(this, el, ElementLoad.Distributed.uniform(0, -10e3)));
+        LoadCase c = app.caseForLoads();
+        if (c == null) return;
+        addOnElement(el, LoadDialog.distributed(this, el, ElementLoad.Distributed.uniform(c, 0, -10e3)));
       }
       case HINGE -> {
         if (el == null) return;
@@ -385,11 +398,21 @@ final class StructureCanvas extends JPanel {
     }
   }
 
-  /** What the status bar says under the pointer: the results at that point. */
+  /** What the status bar says under the pointer: the results at that point (with the envelope, their range). */
   private String readout(int px, int py) {
     Solution sol = app.solution();
     if (!sol.ok()) return null;
     Structure s = app.structure();
+    if (app.envelopeShown()) {
+      Object[] hit = nodeAt(px, py) == null ? elementAt(px, py) : null;
+      if (hit == null) return null;
+      Element e = (Element) hit[0];
+      double x = (Double) hit[1] * e.length();
+      Envelope env = app.envelope();
+      double[] n = env.range(e, Envelope.Effort.N, x), t = env.range(e, Envelope.Effort.T, x), m = env.range(e, Envelope.Effort.M, x);
+      return tr("canvas.readEnvelope", s.number(e), Fmt.num(x), Fmt.num(n[0] / 1e3), Fmt.kN(n[1]), Fmt.num(t[0] / 1e3), Fmt.kN(t[1]),
+          Fmt.num(m[0] / 1e3), Fmt.kNm(m[1]));
+    }
     Node n = nodeAt(px, py);
     if (n != null) {
       double[] d = sol.disp[s.nodes.indexOf(n)];
@@ -458,13 +481,17 @@ final class StructureCanvas extends JPanel {
     Solution sol = app.solution();
     taken.clear();
     tags.clear();
+    boolean envelope = app.envelopeShown();
     if (!exporting) paintGrid(g);
-    if (sol.ok() && app.diagram != MainFrame.Diagram.NONE) paintDiagram(g, sol);
+    paintTitle(g);
+    if (envelope && app.diagram != MainFrame.Diagram.NONE) paintEnvelope(g, app.envelope());
+    else if (sol.ok() && app.diagram != MainFrame.Diagram.NONE) paintDiagram(g, sol);
     paintElements(g, s);
-    if (sol.ok() && app.showDeformed) paintDeformed(g, sol);
+    if (!envelope && sol.ok() && app.showDeformed) paintDeformed(g, sol);
     paintSupportsAndHinges(g, s);
-    paintLoads(g, s);
-    if (sol.ok() && app.showReactions) paintReactions(g, s, sol);
+    if (app.loading() != null) paintLoads(g, s, app.loading());
+    if (envelope && app.showReactions) paintEnvelopeReactions(g, s, app.envelope());
+    else if (sol.ok() && app.showReactions) paintReactions(g, s, sol);
     paintTags(g);
     paintNodes(g, s);
     if (chain != null && !exporting) {
@@ -554,29 +581,71 @@ final class StructureCanvas extends JPanel {
     return x == 0 && y == 0 ? 90 : Math.toDegrees(Math.atan2(y, x));
   }
 
-  private void paintLoads(Graphics2D g, Structure s) {
+  /** The view's name, top left: the case, the combination or the envelope. */
+  private void paintTitle(Graphics2D g) {
+    g.setColor(Symbols.INK);
+    g.setFont(g.getFont().deriveFont(Font.BOLD));
+    g.drawString(app.viewTitle(app.shown()), 12, 20);
+    g.setFont(g.getFont().deriveFont(Font.PLAIN));
+  }
+
+  /** The loads of a case or a combination, factored. */
+  private void paintLoads(Graphics2D g, Structure s, Loading loading) {
     g.setColor(LOAD);
     for (Node n : s.nodes) {
+      NodeLoad l = n.load(loading);
       double x = sx(n.x), y = sy(n.y);
-      double f = Math.hypot(n.fx, n.fy);
-      if (f > 0) {
-        double ux = n.fx / f, uy = -n.fy / f;
+      double f = Math.hypot(l.fx, l.fy);
+      if (f > 1e-9) {
+        double ux = l.fx / f, uy = -l.fy / f;
         g.setStroke(new BasicStroke(2f));
         Symbols.arrow(g, x - ux * 50, y - uy * 50, x - ux * 4, y - uy * 4);
         label(g, Fmt.kN(f), x - ux * 58, y - uy * 58);
       }
-      if (n.mz != 0) {
+      if (Math.abs(l.mz) > 1e-9) {
         g.setStroke(new BasicStroke(2f));
-        Symbols.moment(g, x, y, 20, n.mz > 0);
-        label(g, Fmt.kNm(Math.abs(n.mz)), x + 22, y - 22);
+        Symbols.moment(g, x, y, 20, l.mz > 0);
+        label(g, Fmt.kNm(Math.abs(l.mz)), x + 22, y - 22);
       }
     }
-    for (Element e : s.elements) for (ElementLoad l : e.loads) paintLoad(g, e, l);
-    if (s.selfWeight && !s.elements.isEmpty()) {
+    for (Element e : s.elements) for (ElementLoad l : factored(e, loading, app.shownCombination() != null)) paintLoad(g, e, l);
+    double weight = loading.selfWeight(s);
+    if (weight != 0 && !s.elements.isEmpty()) {
       g.setFont(g.getFont().deriveFont(Font.BOLD));
-      g.drawString(tr("canvas.selfWeight"), 12, getHeight() - 30);
+      g.drawString(tr("canvas.selfWeight") + (weight == 1 ? "" : " × " + Fmt.num(weight)), 12, getHeight() - 30);
       g.setFont(g.getFont().deriveFont(Font.PLAIN));
     }
+  }
+
+  /**
+   * An element's loads in a loading, each times its case's factor. Summed: loads of the same kind at the same
+   * place (the same span, the same axes) are added up into one, so that a combination draws one arrow, or one
+   * distributed load, where its cases have one each.
+   */
+  static List<ElementLoad> factored(Element e, Loading loading, boolean summed) {
+    List<ElementLoad> out = new java.util.ArrayList<>();
+    for (ElementLoad l : e.loads) {
+      double k = loading.factor(l.loadCase());
+      if (k == 0) continue;
+      ElementLoad f = l.scaled(k);
+      int i = 0;
+      while (summed && i < out.size() && sum(out.get(i), f) == null) i++;
+      if (summed && i < out.size()) out.set(i, sum(out.get(i), f));
+      else out.add(f);
+    }
+    return out;
+  }
+
+  /** Two loads of the same kind at the same place as one (in no case), or null. */
+  private static ElementLoad sum(ElementLoad a, ElementLoad b) {
+    return switch (a) {
+      case ElementLoad.Force f when b instanceof ElementLoad.Force o && f.t() == o.t() && f.local() == o.local() ->
+          new ElementLoad.Force(null, f.t(), f.fx() + o.fx(), f.fy() + o.fy(), f.local());
+      case ElementLoad.Couple c when b instanceof ElementLoad.Couple o && c.t() == o.t() -> new ElementLoad.Couple(null, c.t(), c.c() + o.c());
+      case ElementLoad.Distributed d when b instanceof ElementLoad.Distributed o && d.t1() == o.t1() && d.t2() == o.t2() && d.local() == o.local() ->
+          new ElementLoad.Distributed(null, d.t1(), d.t2(), d.qx1() + o.qx1(), d.qy1() + o.qy1(), d.qx2() + o.qx2(), d.qy2() + o.qy2(), d.local());
+      default -> null;
+    };
   }
 
   private void paintLoad(Graphics2D g, Element e, ElementLoad l) {
@@ -659,6 +728,39 @@ final class StructureCanvas extends JPanel {
     }
   }
 
+  /** The reactions' ranges over the combinations: an arrow the way of the largest, and "Ry = smallest … largest". */
+  private void paintEnvelopeReactions(Graphics2D g, Structure s, Envelope env) {
+    g.setColor(REACTION);
+    g.setStroke(new BasicStroke(2f));
+    double tiny = 1;
+    for (double[] r : env.maxReaction) if (r != null) for (double v : r) tiny = Math.max(tiny, Math.abs(v));
+    for (double[] r : env.minReaction) if (r != null) for (double v : r) tiny = Math.max(tiny, Math.abs(v));
+    tiny *= 1e-9;
+    for (int i = 0; i < s.nodes.size(); i++) {
+      double[] lo = env.minReaction[i], hi = env.maxReaction[i];
+      if (lo == null) continue;
+      Node n = s.nodes.get(i);
+      double x = sx(n.x), y = sy(n.y);
+      String[] names = {"Rx", "Ry", "Mz"};
+      for (int j = 0; j < 3; j++) {
+        if (Math.abs(lo[j]) <= tiny && Math.abs(hi[j]) <= tiny) continue;
+        double way = Math.abs(hi[j]) >= Math.abs(lo[j]) ? Math.signum(hi[j]) : Math.signum(lo[j]);
+        String text = names[j] + " = " + Fmt.num(lo[j] / 1e3) + " … " + (j == 2 ? Fmt.kNm(hi[j]) : Fmt.kN(hi[j]));
+        if (j == 0) {
+          Symbols.arrow(g, x - way * 55, y + 34, x - way * 12, y + 34);
+          labelAway(g, text, x - way * 60, y + 50, 0, 14);
+        } else if (j == 1) {
+          double uy = -way;
+          Symbols.arrow(g, x + 30, y - uy * 55, x + 30, y - uy * 12);
+          labelAway(g, text, x + 34, y - uy * 62, 0, -uy * 14);
+        } else {
+          Symbols.moment(g, x, y, 30, way > 0);
+          labelAway(g, text, x - 34, y - 38, 0, -14);
+        }
+      }
+    }
+  }
+
   private static double scaleOfLoads(Structure s, Solution sol) {
     double m = 1;
     for (double[] r : sol.reaction) if (r != null) for (double v : r) m = Math.max(m, Math.abs(v));
@@ -708,11 +810,7 @@ final class StructureCanvas extends JPanel {
       default -> ElementResult::M;
     };
     String unit = d == MainFrame.Diagram.M ? " kN·m" : " kN";
-    Color color = switch (d) {
-      case N -> new Color(0x1f, 0x6f, 0xd1);
-      case T -> new Color(0x1d, 0x8a, 0x3c);
-      default -> new Color(0x7b, 0x3f, 0xc4);
-    };
+    Color color = diagramColor(d);
     double max = 0;
     for (ElementResult r : sol.elements) {
       max = Math.max(max, d == MainFrame.Diagram.N ? r.maxAbsN() : d == MainFrame.Diagram.T ? r.maxAbsT() : r.maxAbsM());
@@ -755,7 +853,90 @@ final class StructureCanvas extends JPanel {
     }
     g.setColor(color);
     g.setFont(g.getFont().deriveFont(Font.BOLD));
-    g.drawString(d + " (max " + Fmt.num(max / 1e3) + unit + ")", 12, 20);
+    g.drawString(d + " (max " + Fmt.num(max / 1e3) + unit + ")", 12, 38);
+    g.setFont(g.getFont().deriveFont(Font.PLAIN));
+  }
+
+  private static Color diagramColor(MainFrame.Diagram d) {
+    return switch (d) {
+      case N -> new Color(0x1f, 0x6f, 0xd1);
+      case T -> new Color(0x1d, 0x8a, 0x3c);
+      default -> new Color(0x7b, 0x3f, 0xc4);
+    };
+  }
+
+  /**
+   * The envelope of the diagram: along each element its largest and its smallest value over the combinations,
+   * two curves with the band between them shaded; their values at the ends and at their peaks.
+   */
+  private void paintEnvelope(Graphics2D g, Envelope env) {
+    MainFrame.Diagram d = app.diagram;
+    Envelope.Effort q = d == MainFrame.Diagram.N ? Envelope.Effort.N : d == MainFrame.Diagram.T ? Envelope.Effort.T : Envelope.Effort.M;
+    String unit = d == MainFrame.Diagram.M ? " kN·m" : " kN";
+    Color color = diagramColor(d);
+    double max = 0, top = Double.NEGATIVE_INFINITY, bottom = Double.POSITIVE_INFINITY;
+    for (Element e : app.structure().elements) {
+      Envelope.Along a = env.of(e);
+      max = Math.max(max, a.maxAbs(q));
+      top = Math.max(top, a.max(q)[a.highest(q)]);
+      bottom = Math.min(bottom, a.min(q)[a.lowest(q)]);
+    }
+    if (max < 1e-9) return;
+    double px = 55 / max;
+    for (Element e : app.structure().elements) {
+      Envelope.Along a = env.of(e);
+      ElementResult r = env.solutions.get(0).of(e);
+      double nx = -r.s, ny = -r.c;
+      double[] hi = a.max(q), lo = a.min(q);
+      Path2D band = new Path2D.Double(), upper = new Path2D.Double(), lower = new Path2D.Double();
+      for (int i = 0; i < a.x.length; i++) {
+        double bx = sx(e.a.x + r.c * a.x[i]), by = sy(e.a.y + r.s * a.x[i]);
+        if (i == 0) {
+          band.moveTo(bx + nx * hi[i] * px, by + ny * hi[i] * px);
+          upper.moveTo(bx, by);
+          lower.moveTo(bx, by);
+        } else {
+          band.lineTo(bx + nx * hi[i] * px, by + ny * hi[i] * px);
+        }
+        upper.lineTo(bx + nx * hi[i] * px, by + ny * hi[i] * px);
+        lower.lineTo(bx + nx * lo[i] * px, by + ny * lo[i] * px);
+      }
+      for (int i = a.x.length - 1; i >= 0; i--) {
+        double bx = sx(e.a.x + r.c * a.x[i]), by = sy(e.a.y + r.s * a.x[i]);
+        band.lineTo(bx + nx * lo[i] * px, by + ny * lo[i] * px);
+      }
+      band.closePath();
+      upper.lineTo(sx(e.b.x), sy(e.b.y));
+      lower.lineTo(sx(e.b.x), sy(e.b.y));
+      Graphics2D f = (Graphics2D) g.create();
+      f.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.18f));
+      f.setColor(color);
+      f.fill(band);
+      f.dispose();
+      g.setColor(color);
+      g.setStroke(new BasicStroke(1.4f));
+      g.draw(upper);
+      g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND, 1, new float[] {5, 3}, 0));
+      g.draw(lower);
+
+      for (double[] curve : new double[][] {hi, lo}) {
+        double v0 = curve[0], v1 = curve[curve.length - 1];
+        if (Math.abs(v0 - v1) < 1e-9 * max) {
+          tags.add(new Tag(r, r.L / 2, v0, px, unit, max, color));
+        } else {
+          tags.add(new Tag(r, 0, v0, px, unit, max, color));
+          tags.add(new Tag(r, r.L, v1, px, unit, max, color));
+        }
+        int peak = curve == hi ? a.highest(q) : a.lowest(q);
+        double v = curve[peak];
+        if (a.x[peak] > 0 && a.x[peak] < r.L && Math.abs(v) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) {
+          tags.add(new Tag(r, a.x[peak], v, px, unit, max, color));
+        }
+      }
+    }
+    g.setColor(color);
+    g.setFont(g.getFont().deriveFont(Font.BOLD));
+    g.drawString(tr("canvas.envelope", d, Fmt.num(top / 1e3), Fmt.num(bottom / 1e3) + unit), 12, 38);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 

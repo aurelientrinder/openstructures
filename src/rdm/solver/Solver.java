@@ -7,7 +7,9 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import rdm.model.Element;
+import rdm.model.Loading;
 import rdm.model.Node;
+import rdm.model.NodeLoad;
 import rdm.model.Structure;
 import rdm.model.Support;
 
@@ -27,16 +29,27 @@ import rdm.model.Support;
  *
  * A blocked unknown may have an imposed value (a support that settles): it moves to the right-hand side,
  * K_ff u_f = F_f − K_fp u_p, and the reactions are K u − F with it.
+ *
+ * The loads (nodal and element loads, imposed displacements, self-weight) are those of a Loading: each load
+ * case's, times its factor.
  */
 public final class Solver {
   private Solver() {}
 
+  /** Every load case at once, each at 1. */
   public static Solution solve(Structure st) {
-    Solution sol = new Solution(st);
+    return solve(st, Loading.all(st));
+  }
+
+  public static Solution solve(Structure st, Loading loading) {
+    Solution sol = new Solution(st, loading);
     if (st.elements.isEmpty()) return sol;
     int n = st.nodes.size();
     Map<Node, Integer> index = new IdentityHashMap<>();
     for (int i = 0; i < n; i++) index.put(st.nodes.get(i), i);
+    NodeLoad[] nodal = new NodeLoad[n];
+    for (int i = 0; i < n; i++) nodal[i] = st.nodes.get(i).load(loading);
+    double weightFactor = loading.selfWeight(st);
 
     boolean[] used = new boolean[n], turns = new boolean[n];
     int internal = 0;
@@ -54,8 +67,8 @@ public final class Solver {
       if (!e.hingeA) turns[a] = true;
       if (!e.hingeB) turns[b] = true;
       internal += 3 - (e.hingeA ? 1 : 0) - (e.hingeB ? 1 : 0);
-      double weight = st.selfWeight ? e.material.rho() * e.section.area() * Structure.G : 0;
-      sol.add(new ElementResult(e, a, b, weight));
+      double weight = weightFactor * e.material.rho() * e.section.area() * Structure.G;
+      sol.add(new ElementResult(e, a, b, weight, loading));
     }
 
     // support frames: columns t and n, u_global = R u_frame
@@ -92,15 +105,16 @@ public final class Solver {
     }
     for (int i = 0; i < n; i++) {
       Node nd = st.nodes.get(i);
+      NodeLoad l = nodal[i];
       if (!used[i]) {
-        if (nd.loaded() || nd.support != Support.NONE) sol.warnings.add(tr("solver.isolated", i + 1));
+        if (l.loaded() || nd.support != Support.NONE) sol.warnings.add(tr("solver.isolated", i + 1));
         continue;
       }
       double[] R = frame[i];
-      F[3 * i] += R[0] * nd.fx + R[1] * nd.fy;
-      F[3 * i + 1] += R[2] * nd.fx + R[3] * nd.fy;
-      if (turns[i]) F[3 * i + 2] += nd.mz;
-      else if (nd.mz != 0) sol.warnings.add(tr("solver.momentIgnored", i + 1));
+      F[3 * i] += R[0] * l.fx + R[1] * l.fy;
+      F[3 * i + 1] += R[2] * l.fx + R[3] * l.fy;
+      if (turns[i]) F[3 * i + 2] += l.mz;
+      else if (l.mz != 0) sol.warnings.add(tr("solver.momentIgnored", i + 1));
     }
 
     // springs of the elastic supports, on the diagonal; each is one more unknown force for the hyperstatism
@@ -141,11 +155,11 @@ public final class Solver {
     double[] U = new double[N];
     for (int i = 0; i < n; i++) {
       if (!used[i]) continue;
-      Node nd = st.nodes.get(i);
+      NodeLoad l = nodal[i];
       for (int k = 0; k < 3; k++) {
-        if (!blocked[3 * i + k] || nd.settle(k) == 0) continue;
+        if (!blocked[3 * i + k] || l.settle(k) == 0) continue;
         if (k == 2 && !turns[i]) sol.warnings.add(tr("solver.rotationSettlementIgnored", i + 1));
-        else U[3 * i + k] = nd.settle(k);
+        else U[3 * i + k] = l.settle(k);
       }
     }
 

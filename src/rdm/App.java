@@ -13,8 +13,9 @@ import rdm.ui.MainFrame;
 /**
  * Résistance des matériaux: plane frames and trusses, drawn and solved live.
  *
- * Arguments: a .rdm file to open, or {@code --restore <snapshot> [<file>]} when the application starts itself
- * again (see MainFrame.restart): the drawing in progress, and the file it came from.
+ * Arguments: a .rdm file to open, or {@code --view <view> --restore <snapshot> [<file>]} when the application
+ * starts itself again (see MainFrame.restart): the case or combination shown, the drawing in progress, and the
+ * file it came from.
  */
 public final class App {
   public static void main(String[] args) {
@@ -33,6 +34,11 @@ public final class App {
 
   private static void open(MainFrame frame, String[] args) {
     try {
+      String view = null;
+      if (args[0].equals("--view") && args.length > 2) {
+        view = args[1];
+        args = java.util.Arrays.copyOfRange(args, 2, args.length);
+      }
       if (args[0].equals("--restore") && args.length > 1) {
         Path snapshot = Path.of(args[1]);
         frame.load(StructureFile.load(snapshot), args.length > 2 ? Path.of(args[2]) : null);
@@ -41,6 +47,7 @@ public final class App {
         Path p = Path.of(args[0]);
         frame.load(StructureFile.load(p), p);
       }
+      if (view != null) frame.showKey(view);
     } catch (Exception ex) {
       JOptionPane.showMessageDialog(frame, tr("file.openFailed", args[args.length - 1], ex.getMessage()), tr("file.open"), JOptionPane.ERROR_MESSAGE);
     }

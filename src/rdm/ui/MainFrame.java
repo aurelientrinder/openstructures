@@ -45,8 +45,12 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import rdm.Settings;
 import rdm.i18n.Tr;
 import rdm.io.StructureFile;
+import rdm.model.Combination;
 import rdm.model.Examples;
+import rdm.model.LoadCase;
+import rdm.model.Loading;
 import rdm.model.Structure;
+import rdm.solver.Envelope;
 import rdm.solver.Solution;
 import rdm.solver.Solver;
 
@@ -64,8 +68,15 @@ public final class MainFrame extends JFrame {
     }
   }
 
+  /** The envelope of the combinations, as a view (the others are a load case or a combination). */
+  static final Object ENVELOPE = new Object();
+
   private Structure structure = new Structure();
-  private Solution solution = Solver.solve(structure);
+  /** what is solved and shown: a load case of the structure, one of its combinations, or ENVELOPE */
+  private Object shown = structure.cases.get(0);
+  private Solution solution = Solver.solve(structure, Loading.of(structure.cases.get(0)));
+  /** the combinations solved, when the envelope is shown; null otherwise */
+  private Envelope envelope;
   private Object selection;
   private Tool tool = Tool.SELECT;
   private final Deque<String> undo = new ArrayDeque<>(), redo = new ArrayDeque<>();
@@ -83,6 +94,9 @@ public final class MainFrame extends JFrame {
   private final JLabel status = new JLabel(" ");
   private final JLabel hint = new JLabel(" ");
   private final Map<Tool, AbstractButton> toolButtons = new EnumMap<>(Tool.class);
+  private final JComboBox<Object> showBox = new JComboBox<>();
+  /** while the views' list is filled again: its selection events are not the user's */
+  private boolean fillingShowBox;
 
   public MainFrame() {
     super(tr("app.title"));
@@ -130,8 +144,133 @@ public final class MainFrame extends JFrame {
     return structure;
   }
 
+  /**
+   * The solution shown: of the load case or the combination; with the envelope, of the first combination that
+   * fails, else of the first one (for h, m and the status: the loads change neither).
+   */
   Solution solution() {
     return solution;
+  }
+
+  /** The envelope, when it is shown (null otherwise); see its ok(). */
+  Envelope envelope() {
+    return envelope;
+  }
+
+  /** The envelope is shown and every combination was solved. */
+  boolean envelopeShown() {
+    return envelope != null && envelope.ok();
+  }
+
+  Object shown() {
+    return shown;
+  }
+
+  /** The load case shown, or null when it is a combination or the envelope. */
+  LoadCase shownCase() {
+    return shown instanceof LoadCase c ? c : null;
+  }
+
+  Combination shownCombination() {
+    return shown instanceof Combination k ? k : null;
+  }
+
+  /** The loads of the case or the combination shown (null for the envelope). */
+  Loading loading() {
+    return shown instanceof LoadCase c ? Loading.of(c) : shown instanceof Combination k ? k.loading() : null;
+  }
+
+  /** Shows (and solves) a load case, a combination or ENVELOPE. Not a change of the structure: no undo. */
+  void show(Object view) {
+    if (view == null || view == shown) return;
+    shown = view;
+    changed();
+  }
+
+  /**
+   * The case new loads go in: the one shown, else one the user picks (which is then shown); null when cancelled.
+   * Loads are always put in a case, never in a combination.
+   */
+  LoadCase caseForLoads() {
+    if (shown instanceof LoadCase c) return c;
+    JComboBox<LoadCase> pick = new JComboBox<>(structure.cases.toArray(LoadCase[]::new));
+    pick.setRenderer(viewRenderer());
+    javax.swing.JPanel p = new javax.swing.JPanel(new BorderLayout(0, 6));
+    p.add(new JLabel(tr("cases.pickForLoads")), BorderLayout.NORTH);
+    p.add(pick, BorderLayout.CENTER);
+    if (JOptionPane.showConfirmDialog(this, p, tr("cases.pickTitle"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+      return null;
+    }
+    LoadCase c = (LoadCase) pick.getSelectedItem();
+    show(c);
+    return c;
+  }
+
+  /** Opens the dialog of the load cases and combinations; what it returns replaces the structure, as one change. */
+  void editCases() {
+    Structure edited = CasesDialog.edit(this, structure);
+    if (edited == null) return;
+    remember();
+    replace(edited);
+  }
+
+  /**
+   * The structure becomes another version of itself (the same nodes and elements, in order): the selection follows
+   * by number, the view by match().
+   */
+  private void replace(Structure s) {
+    Structure old = structure;
+    int node = selection instanceof rdm.model.Node n ? old.nodes.indexOf(n) : -1;
+    int element = selection instanceof rdm.model.Element e ? old.elements.indexOf(e) : -1;
+    structure = s;
+    shown = match(shown, old, s);
+    selection = node >= 0 && node < s.nodes.size() ? s.nodes.get(node) : element >= 0 && element < s.elements.size() ? s.elements.get(element) : null;
+    canvas.cancelChain();
+    changed();
+  }
+
+  /**
+   * The same view in another version of the structure (after undo, or a structure read again): the case or
+   * combination at the same place when it has the same name, else the first one of that name, else the one at
+   * the same place; the envelope while there are combinations; else the first case.
+   */
+  private static Object match(Object view, Structure from, Structure to) {
+    if (view == ENVELOPE) return to.combinations.isEmpty() ? to.cases.get(0) : ENVELOPE;
+    if (view instanceof Combination k) {
+      Object m = same(from.combinations.indexOf(k), k.name, to.combinations, c -> c.name);
+      return m != null ? m : to.cases.get(0);
+    }
+    if (view instanceof LoadCase c) {
+      Object m = same(from.cases.indexOf(c), c.name, to.cases, x -> x.name);
+      return m != null ? m : to.cases.get(0);
+    }
+    return to.cases.get(0);
+  }
+
+  private static <T> T same(int i, String name, List<T> in, java.util.function.Function<T, String> nameOf) {
+    if (i >= 0 && i < in.size() && nameOf.apply(in.get(i)).equals(name)) return in.get(i);
+    for (T t : in) if (nameOf.apply(t).equals(name)) return t;
+    if (in.isEmpty() || i < 0) return null;
+    return in.get(Math.min(i, in.size() - 1));
+  }
+
+  /** The view as text, to hand it over when the application starts again: "case 1", "combination 2", "envelope". */
+  String viewKey() {
+    if (shown == ENVELOPE) return "envelope";
+    if (shown instanceof Combination k) return "combination " + structure.combinations.indexOf(k);
+    return "case " + Math.max(0, structure.cases.indexOf(shown));
+  }
+
+  /** Shows the view a viewKey() names, when the structure has it. */
+  public void showKey(String key) {
+    String[] w = key.split(" ");
+    try {
+      if (w[0].equals("envelope") && !structure.combinations.isEmpty()) show(ENVELOPE);
+      else if (w[0].equals("combination")) show(structure.combinations.get(Integer.parseInt(w[1])));
+      else if (w[0].equals("case")) show(structure.cases.get(Integer.parseInt(w[1])));
+    } catch (RuntimeException ignored) {
+      // not in this structure: the view stays
+    }
   }
 
   Object selection() {
@@ -171,27 +310,57 @@ public final class MainFrame extends JFrame {
     redo.clear();
   }
 
-  /** Solves again and refreshes every view. */
+  /** Solves the view again (every combination for the envelope) and refreshes every view. */
   void changed() {
-    solution = Solver.solve(structure);
+    if (!(shown == ENVELOPE ? !structure.combinations.isEmpty() : structure.cases.contains(shown) || structure.combinations.contains(shown))) {
+      shown = structure.cases.get(0);
+    }
+    if (shown == ENVELOPE) {
+      envelope = Envelope.of(structure);
+      solution = envelope.failed != null ? envelope.failed : envelope.solutions.get(0);
+    } else {
+      envelope = null;
+      solution = Solver.solve(structure, loading());
+    }
     if (selection instanceof rdm.model.Node n && !structure.nodes.contains(n)) selection = null;
     if (selection instanceof rdm.model.Element e && !structure.elements.contains(e)) selection = null;
+    fillShowBox();
     inspector.refresh();
-    report.setText(Report.of(structure, solution));
+    report.setText(reportText());
     report.setCaretPosition(0);
     status.setText(summary());
     canvas.repaint();
   }
 
+  /** The Results tab, for the view. */
+  private String reportText() {
+    return envelopeShown() ? Report.of(structure, envelope) : Report.of(structure, solution, viewTitle(shown));
+  }
+
   private String summary() {
     Solution s = solution;
+    String failing = envelope != null && envelope.failed != null ? tr("status.inCombination", envelope.combinations.get(envelope.solutions.indexOf(s)).name) : "";
     return switch (s.status) {
       case EMPTY -> tr("status.empty");
-      case ERROR -> tr("status.error", s.error);
-      case MECHANISM -> tr("status.mechanism", s.m, String.join(", ", s.free));
-      case OK -> (s.h == 0 ? tr("status.determinate") : tr("status.indeterminate", s.h)) + " — " + tr("status.maxDisplacement", Fmt.mm(s.maxDisplacement))
+      case ERROR -> tr("status.error", s.error) + failing;
+      case MECHANISM -> tr("status.mechanism", s.m, String.join(", ", s.free)) + failing;
+      case OK -> (s.h == 0 ? tr("status.determinate") : tr("status.indeterminate", s.h)) + " — "
+          + (envelopeShown()
+              ? tr("status.envelope", envelope.solutions.size(), Fmt.mm(envelope.maxDisplacement), envelope.combinations.get(envelope.maxDisplacementBy).name)
+              : tr("status.maxDisplacement", Fmt.mm(s.maxDisplacement)))
           + (s.warnings.isEmpty() ? "" : " — " + String.join(tr("list.separator"), s.warnings));
     };
+  }
+
+  /** "Case G (permanent)", "Combination 1.35 G + 1.5 Q", "Envelope of the combinations". */
+  String viewTitle(Object view) {
+    if (view == ENVELOPE) return tr("view.envelope");
+    if (view instanceof LoadCase c) return tr("view.case", c.name, c.type);
+    if (view instanceof Combination k) {
+      String formula = k.formula(structure);
+      return k.name.equals(formula) ? tr("view.combination", k.name) : tr("view.combinationNamed", k.name, formula);
+    }
+    return "";
   }
 
   void hover(String text) {
@@ -199,7 +368,9 @@ public final class MainFrame extends JFrame {
   }
 
   private void restore(String snapshot) {
+    Structure old = structure;
     structure = StructureFile.read(snapshot);
+    shown = match(shown, old, structure);
     selection = null;
     canvas.cancelChain();
     changed();
@@ -218,6 +389,7 @@ public final class MainFrame extends JFrame {
   }
 
   public void load(Structure s, Path from) {
+    shown = match(shown, structure, s);
     structure = s;
     file = from;
     selection = null;
@@ -245,14 +417,15 @@ public final class MainFrame extends JFrame {
     export.add(item(tr("export.svg"), 0, () -> export("svg", tr("export.svgFilter"), p -> Files.writeString(p, canvas.svg(), StandardCharsets.UTF_8))));
     export.addSeparator();
     export.add(item(tr("export.text"), 0, () -> export("txt", tr("export.textFilter"),
-        p -> Files.writeString(p, Report.of(structure, solution).replace("\n", System.lineSeparator()), StandardCharsets.UTF_8))));
+        p -> Files.writeString(p, reportText().replace("\n", System.lineSeparator()), StandardCharsets.UTF_8))));
     export.add(item(tr("export.csv"), 0, () -> {
-      if (!solution.ok()) {
+      if (!solution.ok() || (envelope != null && !envelope.ok())) {
         JOptionPane.showMessageDialog(this, tr("export.notSolved"), tr("menu.export"), JOptionPane.WARNING_MESSAGE);
         return;
       }
+      String csv = envelopeShown() ? Report.csv(envelope) : Report.csv(solution);
       // with a byte order mark, so that a spreadsheet reads it as UTF-8 (kN·m)
-      export("csv", tr("export.csvFilter"), p -> Files.writeString(p, "\uFEFF" + Report.csv(solution), StandardCharsets.UTF_8));
+      export("csv", tr("export.csvFilter"), p -> Files.writeString(p, "\uFEFF" + csv, StandardCharsets.UTF_8));
     }));
     f.add(export);
     f.addSeparator();
@@ -264,6 +437,8 @@ public final class MainFrame extends JFrame {
     JMenuItem del = item(tr("menu.deleteSelection"), 0, canvas::deleteSelection);
     del.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
     e.add(del);
+    e.addSeparator();
+    e.add(item(tr("menu.cases"), KeyEvent.VK_L, this::editCases));
     bar.add(e);
     JMenu v = new JMenu(tr("menu.view"));
     v.add(item(tr("menu.fit"), 0, canvas::fit));
@@ -325,7 +500,7 @@ public final class MainFrame extends JFrame {
       } else {
         cmd.addAll(List.of(ProcessHandle.current().info().command().orElse("javaw"), "-cp", System.getProperty("java.class.path"), "rdm.App"));
       }
-      cmd.addAll(List.of("--restore", snapshot.toString()));
+      cmd.addAll(List.of("--view", viewKey(), "--restore", snapshot.toString()));
       if (file != null) cmd.add(file.toString());
       new ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
       System.exit(0);
@@ -359,9 +534,42 @@ public final class MainFrame extends JFrame {
     return bar;
   }
 
+  /** The views' list: the cases, the combinations, and the envelope when there are combinations. */
+  private void fillShowBox() {
+    fillingShowBox = true;
+    try {
+      showBox.removeAllItems();
+      structure.cases.forEach(showBox::addItem);
+      structure.combinations.forEach(showBox::addItem);
+      if (!structure.combinations.isEmpty()) showBox.addItem(ENVELOPE);
+      showBox.setSelectedItem(shown);
+    } finally {
+      fillingShowBox = false;
+    }
+  }
+
+  /** Writes a case, a combination or the envelope as viewTitle() does. */
+  javax.swing.ListCellRenderer<Object> viewRenderer() {
+    javax.swing.DefaultListCellRenderer r = new javax.swing.DefaultListCellRenderer();
+    return (list, value, index, selected, focus) -> r.getListCellRendererComponent(list, value == null ? "" : viewTitle(value), index, selected, focus);
+  }
+
   private JToolBar displayBar() {
     JToolBar bar = new JToolBar();
     bar.setFloatable(false);
+    bar.add(new JLabel(tr("display.show")));
+    showBox.setRenderer(viewRenderer());
+    showBox.setToolTipText(tr("display.showTip"));
+    showBox.setMaximumSize(new Dimension(300, 26));
+    showBox.addActionListener(e -> {
+      if (!fillingShowBox && showBox.getSelectedItem() != null) show(showBox.getSelectedItem());
+    });
+    bar.add(showBox);
+    JButton cases = new JButton(tr("display.cases"));
+    cases.setToolTipText(tr("display.casesTip"));
+    cases.addActionListener(e -> editCases());
+    bar.add(cases);
+    bar.addSeparator();
     JCheckBox deformed = new JCheckBox(tr("display.deformed"), showDeformed);
     deformed.addActionListener(e -> {
       showDeformed = deformed.isSelected();

@@ -26,14 +26,19 @@ import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.Scrollable;
+import rdm.model.Combination;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
+import rdm.model.LoadCase;
+import rdm.model.Loading;
 import rdm.model.Material;
 import rdm.model.Node;
+import rdm.model.NodeLoad;
 import rdm.model.Section;
 import rdm.model.Structure;
 import rdm.model.Support;
 import rdm.solver.ElementResult;
+import rdm.solver.Envelope;
 import rdm.solver.Solution;
 
 /**
@@ -70,7 +75,9 @@ final class Inspector extends JPanel implements Scrollable {
     List<Object> k = new ArrayList<>();
     k.add(System.identityHashCode(app.structure()));
     k.add(sel == null ? "structure" : System.identityHashCode(sel));
+    k.add(System.identityHashCode(app.shown()));
     k.add(sol.status);
+    k.add(app.envelopeShown());
     if (sel instanceof Node n) k.add(n.support);
     if (sel instanceof Element e) {
       k.add(e.section.kind());
@@ -108,7 +115,34 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.h"), () -> Integer.toString(app.solution().h));
       value(tr("insp.m"), () -> Integer.toString(app.solution().m));
     }
-    check(tr("insp.selfWeight"), () -> app.structure().selfWeight, v -> app.structure().selfWeight = v);
+
+    Structure s = app.structure();
+    heading(app.viewTitle(app.shown()));
+    LoadCase c = app.shownCase();
+    Combination k = app.shownCombination();
+    if (c != null) {
+      check(tr("insp.selfWeightIn", c.name), () -> c.selfWeight, v -> c.selfWeight = v);
+    } else if (k != null) {
+      value(tr("insp.formula"), () -> k.formula(s));
+      value(tr("insp.selfWeightShort"), () -> {
+        double w = k.loading().selfWeight(s);
+        return w == 0 ? tr("insp.none") : "× " + Fmt.num(w);
+      });
+    } else {
+      value(tr("insp.combinations"), () -> Integer.toString(s.combinations.size()));
+      if (app.envelopeShown()) {
+        value(tr("insp.maxDisplacement"), () -> app.envelopeShown() ? Fmt.mm(app.envelope().maxDisplacement) : "—");
+        value(tr("insp.inCombination"), () -> app.envelopeShown() ? app.envelope().combinations.get(app.envelope().maxDisplacementBy).name : "—");
+      }
+    }
+    note(tr(c != null ? "insp.caseHelp" : k != null ? "insp.combinationHelp" : "insp.envelopeHelp"), false);
+    JButton cases = new JButton(tr("insp.editCases"));
+    cases.addActionListener(ev -> app.editCases());
+    GridBagConstraints cc = constraints(0);
+    cc.gridwidth = 2;
+    add(cases, cc);
+    row++;
+
     heading(tr("insp.howTo"));
     note(tr("insp.help1"), false);
     note(tr("insp.help2"), false);
@@ -138,17 +172,45 @@ final class Inspector extends JPanel implements Scrollable {
       number(tr("insp.stiffness", axis[0]), () -> n.springT / 1e3, v -> n.springT = v * 1e3);
       number(tr("insp.stiffness", axis[1]), () -> n.springN / 1e3, v -> n.springN = v * 1e3);
       number(tr("insp.rotationStiffness"), () -> n.springR / 1e3, v -> n.springR = v * 1e3);
-    } else if (n.support != Support.NONE) {
-      if (n.support.t) number(n.support.skewed() ? tr("insp.imposedAlong", axis[0]) : tr("insp.imposed", axis[0]), () -> n.settleT * 1e3, v -> n.settleT = v / 1e3);
-      if (n.support.n) number(n.support.skewed() ? tr("insp.imposedAlong", axis[1]) : tr("insp.imposed", axis[1]), () -> n.settleN * 1e3, v -> n.settleN = v / 1e3);
-      if (n.support.r) number(tr("insp.imposedRotation"), () -> n.settleR * 1e3, v -> n.settleR = v / 1e3);
     }
-    heading(tr("insp.loads"));
-    number("Fx (kN)", () -> n.fx / 1e3, v -> n.fx = v * 1e3);
-    number("Fy (kN)", () -> n.fy / 1e3, v -> n.fy = v * 1e3);
-    number("Mz (kN·m)", () -> n.mz / 1e3, v -> n.mz = v * 1e3);
-    if (app.solution().ok()) {
-      int i = s.nodes.indexOf(n);
+
+    // the loads and the imposed displacements: of the case shown, or of the combination's cases, factored
+    LoadCase c = app.shownCase();
+    Loading loading = app.loading();
+    int i = s.nodes.indexOf(n);
+    if (loading != null) {
+      heading(c != null ? tr("insp.loadsIn", c.name) : tr("insp.loadsFactored"));
+      List<String> labels = new ArrayList<>(List.of("Fx (kN)", "Fy (kN)", "Mz (kN·m)"));
+      List<Integer> which = new ArrayList<>(List.of(0, 1, 2));
+      if (n.support != Support.NONE && n.support != Support.ELASTIQUE) {
+        if (n.support.t) {
+          labels.add(n.support.skewed() ? tr("insp.imposedAlong", axis[0]) : tr("insp.imposed", axis[0]));
+          which.add(3);
+        }
+        if (n.support.n) {
+          labels.add(n.support.skewed() ? tr("insp.imposedAlong", axis[1]) : tr("insp.imposed", axis[1]));
+          which.add(4);
+        }
+        if (n.support.r) {
+          labels.add(tr("insp.imposedRotation"));
+          which.add(5);
+        }
+      }
+      for (int j = 0; j < labels.size(); j++) {
+        int w = which.get(j);
+        if (c != null) number(labels.get(j), () -> shown(n.load(c), w), v -> set(n.loadIn(c), w, v));
+        else value(labels.get(j), () -> Fmt.num(shown(n.load(loading), w)));
+      }
+      if (c == null) note(tr("insp.editInCase"), true);
+    }
+    if (app.envelopeShown()) {
+      if (n.support != Support.NONE) {
+        heading(tr("insp.envelopeResults"));
+        value(tr("insp.reaction", "Rx"), () -> range(i, 0, false));
+        value(tr("insp.reaction", "Ry"), () -> range(i, 1, false));
+        value(tr("insp.reaction", "Mz"), () -> range(i, 2, true));
+      }
+    } else if (app.solution().ok()) {
       heading(tr("insp.results"));
       value("ux", () -> app.solution().ok() ? Fmt.mm(app.solution().disp[i][0]) : "—");
       value("uy", () -> app.solution().ok() ? Fmt.mm(app.solution().disp[i][1]) : "—");
@@ -159,6 +221,51 @@ final class Inspector extends JPanel implements Scrollable {
         value(tr("insp.reaction", "Mz"), () -> reaction(i, 2, true));
       }
     }
+  }
+
+  /** A node's load or imposed displacement w (0–2: Fx, Fy, Mz; 3–5: along t, n, rotation) as typed: kN, kN·m, mm, mrad. */
+  private static double shown(NodeLoad l, int w) {
+    return switch (w) {
+      case 0 -> l.fx / 1e3;
+      case 1 -> l.fy / 1e3;
+      case 2 -> l.mz / 1e3;
+      default -> l.settle(w - 3) * 1e3;
+    };
+  }
+
+  private static void set(NodeLoad l, int w, double v) {
+    switch (w) {
+      case 0 -> l.fx = v * 1e3;
+      case 1 -> l.fy = v * 1e3;
+      case 2 -> l.mz = v * 1e3;
+      case 3 -> l.settleT = v / 1e3;
+      case 4 -> l.settleN = v / 1e3;
+      default -> l.settleR = v / 1e3;
+    }
+  }
+
+  /** A reaction's smallest and largest values over the combinations. */
+  private String range(int i, int k, boolean moment) {
+    Envelope env = app.envelope();
+    if (!app.envelopeShown() || env.minReaction[i] == null) return "—";
+    double lo = env.minReaction[i][k], hi = env.maxReaction[i][k];
+    return Fmt.num(lo / 1e3) + " … " + (moment ? Fmt.kNm(hi) : Fmt.kN(hi));
+  }
+
+  /** A load not to change here: in a combination (factored) or with the envelope. */
+  private void loadText(String text) {
+    JTextArea t = new JTextArea(text);
+    t.setLineWrap(true);
+    t.setWrapStyleWord(true);
+    t.setEditable(false);
+    t.setOpaque(false);
+    t.setFont(getFont());
+    t.setColumns(8);
+    GridBagConstraints c = constraints(1);
+    c.gridx = 0;
+    c.gridwidth = 2;
+    add(t, c);
+    row++;
   }
 
   /** A load of the element: what it is, a button to change it, one to remove it. */
@@ -271,19 +378,46 @@ final class Inspector extends JPanel implements Scrollable {
     number("E (MPa)", () -> e.material.E(), v -> e.material = Material.of(v, e.material.rho()));
     number("ρ (kg/m³)", () -> e.material.rho(), v -> e.material = Material.of(e.material.E(), v));
 
-    heading(tr("insp.elementLoads"));
-    if (e.loads.isEmpty()) note(tr("insp.noLoads"), false);
-    for (ElementLoad l : e.loads) loadRow(e, l);
-    JPanel add = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
-    add.add(button(tr("insp.addForce"), () -> LoadDialog.force(this, e, new ElementLoad.Force(0.5, 0, -10e3, false)), e));
-    add.add(button(tr("insp.addCouple"), () -> LoadDialog.couple(this, e, new ElementLoad.Couple(0.5, 10e3)), e));
-    add.add(button(tr("insp.addDistributed"), () -> LoadDialog.distributed(this, e, ElementLoad.Distributed.uniform(0, -10e3)), e));
-    GridBagConstraints ac = constraints(0);
-    ac.gridwidth = 2;
-    add(add, ac);
-    row++;
+    // the loads of the case shown, to change; of a combination, factored; with the envelope, every case's
+    LoadCase c = app.shownCase();
+    Loading loading = app.loading();
+    if (c != null) {
+      heading(tr("insp.elementLoadsIn", c.name));
+      List<ElementLoad> mine = e.loadsIn(c);
+      if (mine.isEmpty()) note(tr("insp.noLoads"), false);
+      for (ElementLoad l : mine) loadRow(e, l);
+      JPanel add = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+      add.add(button(tr("insp.addForce"), () -> LoadDialog.force(this, e, new ElementLoad.Force(c, 0.5, 0, -10e3, false)), e));
+      add.add(button(tr("insp.addCouple"), () -> LoadDialog.couple(this, e, new ElementLoad.Couple(c, 0.5, 10e3)), e));
+      add.add(button(tr("insp.addDistributed"), () -> LoadDialog.distributed(this, e, ElementLoad.Distributed.uniform(c, 0, -10e3)), e));
+      GridBagConstraints ac = constraints(0);
+      ac.gridwidth = 2;
+      add(add, ac);
+      row++;
+      int others = e.loads.size() - mine.size();
+      if (others > 0) note(tr("insp.otherCases", others), true);
+    } else {
+      heading(loading != null ? tr("insp.loadsFactored") : tr("insp.elementLoadsAll"));
+      int shownLoads = 0;
+      for (ElementLoad l : e.loads) {
+        double k = loading == null ? 1 : loading.factor(l.loadCase());
+        if (k == 0) continue;
+        String factor = loading == null ? "" : Fmt.num(k) + " × ";
+        loadText(tr("insp.caseLoad", factor + l.loadCase().name, LoadDialog.describe(e, l)));
+        shownLoads++;
+      }
+      if (shownLoads == 0) note(tr("insp.noLoadsHere"), false);
+      note(tr("insp.editInCase"), true);
+    }
 
-    if (app.solution().ok()) {
+    if (app.envelopeShown()) {
+      heading(tr("insp.envelopeResults"));
+      value(tr("insp.rangeN"), () -> extremes(e, Envelope.Effort.N, false));
+      value(tr("insp.rangeT"), () -> extremes(e, Envelope.Effort.T, false));
+      value(tr("insp.rangeM"), () -> extremes(e, Envelope.Effort.M, true));
+      value(tr("insp.maxM"), () -> worst(e, ElementResult::maxAbsM, Fmt::kNm));
+      value(tr("insp.sigma"), () -> worst(e, ElementResult::sigmaMax, Fmt::MPa));
+    } else if (app.solution().ok()) {
       heading(tr("insp.elementResults"));
       value(tr("insp.endsN"), () -> ends(e, ElementResult::N, false));
       value(tr("insp.endsT"), () -> ends(e, ElementResult::T, false));
@@ -302,6 +436,30 @@ final class Inspector extends JPanel implements Scrollable {
       double a = q.at(r, 0), b = q.at(r, r.L);
       return moment ? Fmt.num(a / 1e3) + " / " + Fmt.kNm(b) : Fmt.num(a / 1e3) + " / " + Fmt.kN(b);
     });
+  }
+
+  /** The smallest and largest value of an internal force along the element, over the combinations. */
+  private String extremes(Element e, Envelope.Effort q, boolean moment) {
+    if (!app.envelopeShown()) return "—";
+    Envelope.Along a = app.envelope().of(e);
+    double lo = a.min(q)[a.lowest(q)], hi = a.max(q)[a.highest(q)];
+    return Fmt.num(lo / 1e3) + " … " + (moment ? Fmt.kNm(hi) : Fmt.kN(hi));
+  }
+
+  /** The largest of a result over the combinations, and the combination that gives it. */
+  private String worst(Element e, java.util.function.ToDoubleFunction<ElementResult> f, java.util.function.DoubleFunction<String> fmt) {
+    if (!app.envelopeShown()) return "—";
+    Envelope env = app.envelope();
+    int by = 0;
+    double best = -1;
+    for (int k = 0; k < env.solutions.size(); k++) {
+      double v = f.applyAsDouble(env.solutions.get(k).of(e));
+      if (v > best) {
+        best = v;
+        by = k;
+      }
+    }
+    return tr("insp.byCombination", fmt.apply(best), env.combinations.get(by).name);
   }
 
   private String result(Element e, java.util.function.Function<ElementResult, String> f) {

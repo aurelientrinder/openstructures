@@ -13,7 +13,7 @@ public final class Element {
   public boolean hingeA, hingeB;
   public Section section;
   public Material material = Material.STEEL;
-  /** the loads along it (the self-weight is added by the solver when the structure asks for it) */
+  /** the loads along it, each in its case (the self-weight is added by the solver for the cases that take it in) */
   public final List<ElementLoad> loads = new ArrayList<>();
 
   public Element(Node a, Node b, Section section) {
@@ -28,6 +28,11 @@ public final class Element {
 
   public boolean loaded() {
     return !loads.isEmpty();
+  }
+
+  /** Its loads in one case. */
+  public List<ElementLoad> loadsIn(LoadCase c) {
+    return loads.stream().filter(l -> l.loadCase() == c).toList();
   }
 
   public double length() {

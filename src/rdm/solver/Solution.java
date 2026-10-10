@@ -5,6 +5,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import rdm.model.Element;
+import rdm.model.Loading;
 import rdm.model.Structure;
 
 /** What the solver found for a structure. Lengths in m, forces in N, moments in N·m, rotations in rad. */
@@ -20,6 +21,8 @@ public final class Solution {
   }
 
   public final Structure structure;
+  /** the factor of each load case it was solved for */
+  public final Loading loading;
   public Status status = Status.EMPTY;
   public String error;
   /** degree of hyperstatism (static indeterminacy) and of mobility */
@@ -36,8 +39,9 @@ public final class Solution {
   /** the largest displacement of any point of the structure, m */
   public double maxDisplacement;
 
-  Solution(Structure s) {
+  Solution(Structure s, Loading loading) {
     structure = s;
+    this.loading = loading;
   }
 
   void add(ElementResult r) {
