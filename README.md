@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver and the sections against closed-form results, and the texts (212 checks)
+verify.cmd       :: the solver and the sections against closed-form results, and the texts (261 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -67,7 +67,7 @@ javac -encoding UTF-8 -d out/test $(find src test -name '*.java') && java -cp ou
 
 The keys are the same in both languages. Right or middle drag pans, the wheel zooms. Hover the structure to read
 N, V, M and the displacement at that point in the status bar. Ctrl+Z / Ctrl+Y undo and redo. File › Examples has
-nine ready-made structures. An element's loads are listed in its properties, where they can be changed, removed
+eleven ready-made structures. An element's loads are listed in its properties, where they can be changed, removed
 or added. The structure's properties (nothing selected) switch the self-weight on in a load case: ρ·A·g per
 metre of each element, from its material. The Results tab lists every number (displacements, reactions, end
 forces, maxima, σ max).
@@ -91,6 +91,23 @@ wind (W).
 ![Load cases and combinations: the cases, and a factor per case for each combination](docs/cases.png)
 
 In French the shear force and the bending moment are written T and Mf, as in French courses; in English V and M.
+
+**Buckling.** *Buckling:*, above the drawing, computes the linear (Euler) buckling of the case or combination shown,
+as RDM's *Flambement*, and draws mode 1, 2 or 3 on the structure instead of the deformed shape, the diagram and the
+reactions. Every load times the critical load factor λcr (*coefficient de charge critique* λc) is the critical
+load: λcr of mode 1 is the safety factor against buckling, written under the view's title, in red below 1. The
+normal forces of the linear solution make the geometric stiffness, and the λcr are the eigenvalues of
+K φ = λ (−K_g) φ; frames, columns and truss bars alike (a bar buckles alone, between its hinges). The Results tab
+and the text export list the modes' λcr, the critical load on the nodes, and for each compressed element its
+critical load Ncr = λcr·|N|, its buckling length Lcr = π√(EI/Ncr) (Lf in French), its slenderness and Euler's load
+of the element alone, hinged at both ends; the properties give the same for the selected element. With the
+envelope, the combination with the smallest λcr is shown. The CSV export writes the modes' shapes. Each element is
+cut into 8 for the geometric stiffness (fewer past 25 elements), so λcr comes out a little above the exact value:
+by 0.003 % for a pinned column, 0.05 % for a fixed one. Only in the plane: out-of-plane and lateral-torsional
+buckling are not checked. File › Examples has *Euler's column* (λcr = 1.6) and a *portal frame* that sways
+(λcr = 4); the *Warren truss* buckles at its end diagonals.
+
+![Buckling of a portal frame with fixed feet: mode 1 sways at λcr = 4, the critical loads and the columns' buckling length in the Results tab](docs/buckling.png)
 
 **Sections.** An element's properties show its section, drawn; *Change…* opens the templates: rectangle, solid
 round, round tube, rectangular hollow, I, T, U (channel), the IPE table, or A, I and v typed in. The chosen one is
@@ -131,7 +148,9 @@ and combinations; older files open with every load in case G).
   integrals of what lies before the cut. Imposed displacements go to the right-hand side; springs add to the
   diagonal. A case or a combination is one `Loading`, solved once; `Envelope` solves every combination and keeps
   the extreme N, V, M along each element (at sample points and each combination's moment extrema) and the
-  extreme reactions.
+  extreme reactions. `Buckling` cuts each element into sub-elements, adds their geometric stiffness from N, reduces
+  K φ = λ (−K_g) φ with the Cholesky factor to a symmetric eigenproblem, solved by `Eigen` (Householder, then QL);
+  a hinged end keeps a rotation of its own.
 - `rdm.i18n` — the texts: `En` and `Fr` map the same keys to each language, `Tr.tr(key, args…)` looks them up.
   To add a language, copy `Fr.java`, translate it and add it to `Tr.Lang`; `Verify` checks that every language
   has every key with the same arguments.
@@ -154,8 +173,9 @@ sections.
 
 ## Not yet
 
-Thermal loads, buckling, 3D, shear deformation (Timoshenko), catalogues other than IPE (HEA, HEB, UPN…), angles
-(their principal axes are inclined), serviceability and accidental combinations, printing.
+Thermal loads, buckling out of the plane and lateral-torsional buckling, 3D, shear deformation (Timoshenko),
+catalogues other than IPE (HEA, HEB, UPN…), angles (their principal axes are inclined), serviceability and
+accidental combinations, printing.
 
 ## Contributing
 
