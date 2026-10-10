@@ -215,41 +215,48 @@ final class Inspector extends JPanel implements Scrollable {
     check(tr("insp.hingeB"), () -> e.hingeB, v -> e.hingeB = v);
 
     heading(tr("insp.section"));
-    JComboBox<Section.Kind> kind = new JComboBox<>(Section.Kind.values());
-    kind.setSelectedItem(e.section.kind());
-    kind.addActionListener(ev -> {
-      Section.Kind k = (Section.Kind) kind.getSelectedItem();
-      if (k != e.section.kind()) app.edit(() -> e.section = Section.of(k));
+    // the section drawn small with its name, and the templates' dialog
+    JLabel shown = new JLabel(e.section.label(), SectionView.icon(e.section, 40), JLabel.LEFT);
+    shown.setIconTextGap(8);
+    updaters.add(() -> {
+      shown.setText(e.section.label());
+      shown.setIcon(SectionView.icon(e.section, 40));
     });
-    field(tr("insp.shape"), kind);
-    switch (e.section.kind()) {
-      case RECT -> {
-        sectionParam(e, "b (mm)", 1);
-        sectionParam(e, tr("insp.rectH"), 2);
-      }
-      case ROUND -> sectionParam(e, "d (mm)", 1);
-      case TUBE -> {
-        sectionParam(e, tr("insp.tubeD"), 1);
-        sectionParam(e, tr("insp.tubeE"), 2);
-      }
-      case IPE -> {
-        JComboBox<String> size = new JComboBox<>();
-        for (double[] r : Section.IPE_TABLE) size.addItem("IPE " + (int) r[0]);
-        size.setSelectedItem("IPE " + (int) e.section.p1());
-        size.addActionListener(ev -> {
-          double h = Section.IPE_TABLE[size.getSelectedIndex()][0];
-          if (h != e.section.p1()) app.edit(() -> e.section = new Section(Section.Kind.IPE, h, 0, 0));
-        });
-        field(tr("insp.profile"), size);
-      }
-      case CUSTOM -> {
-        sectionParam(e, "A (cm²)", 1);
-        sectionParam(e, "I (cm⁴)", 2);
-        sectionParam(e, tr("insp.fibre"), 3);
-      }
+    JButton choose = new JButton(tr("insp.chooseSection"));
+    choose.addActionListener(ev -> {
+      Section v = SectionDialog.ask(this, e.section, e.material.rho());
+      if (v != null && !v.equals(e.section)) app.edit(() -> e.section = v);
+    });
+    JPanel line = new JPanel(new java.awt.BorderLayout(6, 0));
+    line.add(shown, java.awt.BorderLayout.CENTER);
+    // at its own height, not the icon's
+    JPanel holder = new JPanel(new java.awt.GridBagLayout());
+    holder.add(choose);
+    line.add(holder, java.awt.BorderLayout.EAST);
+    GridBagConstraints lc = constraints(1);
+    lc.gridx = 0;
+    lc.gridwidth = 2;
+    add(line, lc);
+    row++;
+    Section.Kind kind = e.section.kind();
+    if (kind == Section.Kind.IPE) {
+      JComboBox<String> size = new JComboBox<>();
+      for (double[] r : Section.IPE_TABLE) size.addItem("IPE " + (int) r[0]);
+      size.setSelectedItem("IPE " + (int) e.section.p1());
+      size.addActionListener(ev -> {
+        double h = Section.IPE_TABLE[size.getSelectedIndex()][0];
+        if (h != e.section.p1()) app.edit(() -> e.section = new Section(Section.Kind.IPE, h, 0, 0));
+      });
+      field(tr("insp.profile"), size);
     }
+    for (int i = 0; i < kind.params.size(); i++) {
+      int which = i;
+      number(tr("dim." + kind.params.get(i)), () -> e.section.param(which), v -> e.section = e.section.with(which, v));
+    }
+    if (kind.turns()) check(tr("insp.turned"), () -> e.section.turned(), v -> e.section = e.section.turned(v));
     value("A", () -> Fmt.num(e.section.area() * 1e4) + " cm²");
     value("I", () -> Fmt.num(e.section.inertia() * 1e8) + " cm⁴");
+    value("v", () -> Fmt.num(e.section.fibre() * 1e2) + " cm");
 
     heading(tr("insp.material"));
     JComboBox<Material> mat = new JComboBox<>();
@@ -301,13 +308,6 @@ final class Inspector extends JPanel implements Scrollable {
     Solution sol = app.solution();
     ElementResult r = sol.ok() ? sol.of(e) : null;
     return r == null ? "—" : f.apply(r);
-  }
-
-  private void sectionParam(Element e, String label, int which) {
-    number(label, () -> which == 1 ? e.section.p1() : which == 2 ? e.section.p2() : e.section.p3(), v -> {
-      Section c = e.section;
-      e.section = new Section(c.kind(), which == 1 ? v : c.p1(), which == 2 ? v : c.p2(), which == 3 ? v : c.p3());
-    });
   }
 
   // ——— rows ———

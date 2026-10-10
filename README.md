@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver against closed-form results, and the texts (112 checks)
+verify.cmd       :: the solver and the sections against closed-form results, and the texts (144 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -74,12 +74,25 @@ element, from its material. The Results tab lists every number (displacements, r
 
 In French the shear force and the bending moment are written T and Mf, as in French courses; in English V and M.
 
+**Sections.** An element's properties show its section, drawn; *Change…* opens the templates: rectangle, solid
+round, round tube, rectangular hollow, I, T, U (channel), the IPE table, or A, I and v typed in. The chosen one is
+drawn to scale with its dimensions, its centroid G and its bending axis z; its area, inertia, extreme fibre and
+mass per metre follow as the dimensions are typed. A section can be turned 90° to bend about its weak axis.
+Asymmetric sections (T, turned U) are taken about their centroid, with v on the side furthest from it, for σ.
+
+![The section templates: an I section drawn with its dimensions and its bending axis](docs/section.png)
+
+**File › Export** saves the drawing as it is on screen (without the grid) as a PNG image or an SVG vector
+drawing, the Results tab as text, and the diagrams as a CSV table for a spreadsheet: points along every element
+(both sides of each jump) with N, V, M and the displacement. The CSV uses ";" and decimal commas in French, ","
+and points in English.
+
 **Settings › Interface size** scales everything (menus, panels, fonts and the drawing) from 100 % to 300 %, or
 leaves it to the system's display scale. **Settings › Language** picks English, French or the system's language.
 Both are kept between runs and apply when the app starts again: it offers to restart at once, keeping the
 drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -jar rdm.jar`.
 
-Units: lengths in m, forces in kN, sections in mm (IPE from the table, or A/I/v in cm), E in MPa, ρ in kg/m³,
+Units: lengths in m, forces in kN, section dimensions in mm (A/I/v typed in: cm), E in MPa, ρ in kg/m³,
 imposed displacements in mm and mrad, spring stiffnesses in kN/m and kN·m/rad.
 Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java`.
 
@@ -87,7 +100,8 @@ Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java`.
 
 - `rdm.model` — `Structure` (nodes, elements, self-weight), `Node` (support, nodal load, imposed displacement,
   springs), `Element` (hinges, section, material, loads), `ElementLoad` (force, couple, linear distributed load,
-  positions as fractions of the length), `Support`, `Section`, `Material`, `Examples`.
+  positions as fractions of the length), `Support`, `Section` (templates; the thin-walled ones computed from
+  their rectangles), `Material`, `Examples`.
 - `rdm.solver` — displacement method (`Solver`): 3 unknowns per node (ux, uy, θz), Euler–Bernoulli elements
   with hinged ends condensed out (`ElementResult`), skewed supports solved in their own frame, a semi-definite
   Cholesky (`Cholesky`) whose null pivots are the mechanism's degrees of freedom. `ElementResult` gives the
@@ -117,8 +131,8 @@ sections.
 
 ## Not yet
 
-Thermal loads, buckling, 3D, shear deformation (Timoshenko), section catalogues other than IPE, load cases and
-combinations, printing/export.
+Thermal loads, buckling, 3D, shear deformation (Timoshenko), catalogues other than IPE (HEA, HEB, UPN…), angles
+(their principal axes are inclined), load cases and combinations, printing.
 
 ## Contributing
 

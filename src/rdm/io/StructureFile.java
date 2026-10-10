@@ -20,23 +20,24 @@ import rdm.model.Support;
  * parameters as in Section; positions along an element as fractions of its length):
  *
  * <pre>
- * RDM 2
+ * RDM 3
  * selfweight 0|1
  * node x y SUPPORT angle fx fy mz settleT settleN settleR springT springN springR
- * elem a b hingeA hingeB KIND p1 p2 p3 E rho      (a, b: node numbers from 1)
+ * elem a b hingeA hingeB KIND p1 p2 p3 p4 turned E rho      (a, b: node numbers from 1; turned 0|1)
  * force e t fx fy local                           (e: element number from 1; local 0|1)
  * couple e t c
  * dist e t1 t2 qx1 qy1 qx2 qy2 local
  * </pre>
  *
- * Version 1 files (no load lines; elem ending with E qx qy, node with its first 8 fields) are read too.
+ * Older files are read too: version 2 had no p4 nor turned; version 1 no load lines, elem ending with E qx qy,
+ * node with its first 8 fields.
  * Also the undo snapshots.
  */
 public final class StructureFile {
   private StructureFile() {}
 
   public static String write(Structure s) {
-    StringBuilder sb = new StringBuilder("RDM 2\n");
+    StringBuilder sb = new StringBuilder("RDM 3\n");
     sb.append(line("selfweight", s.selfWeight ? 1 : 0));
     for (Node n : s.nodes) {
       sb.append(line("node", n.x, n.y, n.support.name(), n.supportAngle, n.fx, n.fy, n.mz, n.settleT, n.settleN, n.settleR, n.springT, n.springN,
@@ -44,7 +45,7 @@ public final class StructureFile {
     }
     for (Element e : s.elements) {
       sb.append(line("elem", s.number(e.a), s.number(e.b), e.hingeA ? 1 : 0, e.hingeB ? 1 : 0, e.section.kind().name(),
-          e.section.p1(), e.section.p2(), e.section.p3(), e.material.E(), e.material.rho()));
+          e.section.p1(), e.section.p2(), e.section.p3(), e.section.p4(), e.section.turned() ? 1 : 0, e.material.E(), e.material.rho()));
     }
     for (Element e : s.elements) {
       int k = s.number(e);
@@ -69,6 +70,7 @@ public final class StructureFile {
     Structure s = new Structure();
     String[] lines = text.split("\\R");
     if (lines.length == 0 || !lines[0].trim().startsWith("RDM")) throw new IllegalArgumentException(tr("file.notRdm"));
+    int version = lines[0].trim().equals("RDM 1") ? 1 : lines[0].trim().equals("RDM 2") ? 2 : 3;
     for (int k = 1; k < lines.length; k++) {
       String l = lines[k].trim();
       if (l.isEmpty() || l.startsWith("#")) continue;
@@ -93,19 +95,22 @@ public final class StructureFile {
             }
           }
           case "elem" -> {
-            Element e = new Element(s.nodes.get(Integer.parseInt(w[1]) - 1), s.nodes.get(Integer.parseInt(w[2]) - 1),
-                new Section(Section.Kind.valueOf(w[5]), d(w[6]), d(w[7]), d(w[8])));
+            // from version 3, the section has a 4th dimension and may be turned: E and ρ come 2 places later
+            int shift = version >= 3 ? 2 : 0;
+            Section section = version >= 3 ? new Section(Section.Kind.valueOf(w[5]), d(w[6]), d(w[7]), d(w[8]), d(w[9]), w[10].equals("1"))
+                : new Section(Section.Kind.valueOf(w[5]), d(w[6]), d(w[7]), d(w[8]));
+            Element e = new Element(s.nodes.get(Integer.parseInt(w[1]) - 1), s.nodes.get(Integer.parseInt(w[2]) - 1), section);
             e.hingeA = w[3].equals("1");
             e.hingeB = w[4].equals("1");
-            double E = d(w[9]);
-            if (lines[0].trim().equals("RDM 1")) {
+            double E = d(w[9 + shift]);
+            if (version == 1) {
               // version 1: the density was not kept, and the element's uniform load ended the line
               Material m = Material.PRESETS.stream().filter(p -> p.E() == E).findFirst().orElse(null);
               e.material = m != null ? m : Material.of(E, Material.STEEL.rho());
               double qx = d(w[10]), qy = d(w[11]);
               if (qx != 0 || qy != 0) e.loads.add(ElementLoad.Distributed.uniform(qx, qy));
             } else {
-              e.material = Material.of(E, d(w[10]));
+              e.material = Material.of(E, d(w[10 + shift]));
             }
             s.elements.add(e);
           }

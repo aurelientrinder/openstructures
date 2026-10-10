@@ -53,6 +53,7 @@ public final class Verify {
     readVersion1();
     examples();
     roundTrip();
+    sections();
     texts();
     System.out.printf("%d vérifications, %d échec(s)%n", checks, failures);
     if (failures > 0) System.exit(1);
@@ -449,6 +450,71 @@ public final class Verify {
     Solution sol = Solver.solve(s);
     check("fichier version 1 : charge répartie relue", sol.reaction[0][1], 5000 * 6 / 2.0);
     check("fichier version 1 : acier", s.elements.get(0).material.rho(), 7850);
+  }
+
+  /** The templates' area, inertia and extreme fibre, against the textbook formulas (mm, then SI). */
+  static void sections() {
+    Section rect = new Section(Section.Kind.RECT, 50, 100, 0);
+    section("rectangle 50 × 100", rect, 5000, 50 * Math.pow(100, 3) / 12, 50);
+    section("rectangle 50 × 100 tourné", rect.turned(true), 5000, 100 * Math.pow(50, 3) / 12, 25);
+
+    section("tube rectangulaire 200 × 100 × 8", new Section(Section.Kind.BOX, 200, 100, 8, 0, false), 200 * 100 - 184 * 84,
+        (100 * Math.pow(200, 3) - 84 * Math.pow(184, 3)) / 12, 100);
+
+    double h = 300, b = 150, tw = 7, tf = 11;
+    Section i = new Section(Section.Kind.I_SECTION, h, b, tw, tf, false);
+    section("I 300 × 150 × 7 × 11", i, b * h - (b - tw) * (h - 2 * tf), (b * Math.pow(h, 3) - (b - tw) * Math.pow(h - 2 * tf, 3)) / 12, h / 2);
+    section("I 300 × 150 × 7 × 11 tourné", i.turned(true), b * h - (b - tw) * (h - 2 * tf),
+        2 * tf * Math.pow(b, 3) / 12 + (h - 2 * tf) * Math.pow(tw, 3) / 12, b / 2);
+
+    // T: flange 100 × 10 on top, web 8 × 90 under it
+    double aF = 100 * 10, aW = 8 * 90, yc = (aF * 95 + aW * 45) / (aF + aW);
+    section("T 100 × 100 × 8 × 10", new Section(Section.Kind.T_SECTION, 100, 100, 8, 10, false), aF + aW,
+        100 * Math.pow(10, 3) / 12 + aF * Math.pow(95 - yc, 2) + 8 * Math.pow(90, 3) / 12 + aW * Math.pow(45 - yc, 2), Math.max(yc, 100 - yc));
+
+    // U turned: bending about the axis parallel to the web, the centroid nearer the web
+    h = 200;
+    b = 75;
+    tw = 8.5;
+    tf = 11.5;
+    double aWeb = h * tw, aFl = (b - tw) * tf, zc = (aWeb * tw / 2 + 2 * aFl * (tw + (b - tw) / 2)) / (aWeb + 2 * aFl);
+    double iU = h * Math.pow(tw, 3) / 12 + aWeb * Math.pow(tw / 2 - zc, 2) + 2 * (tf * Math.pow(b - tw, 3) / 12 + aFl * Math.pow(tw + (b - tw) / 2 - zc, 2));
+    section("U 200 × 75 tourné", new Section(Section.Kind.CHANNEL, h, b, tw, tf, true), aWeb + 2 * aFl, iU, Math.max(zc, b - zc));
+
+    section("tube rond 60 × 4", Section.BAR_DEFAULT, Math.PI * (60 * 60 - 52 * 52) / 4, Math.PI * (Math.pow(60, 4) - Math.pow(52, 4)) / 64, 30);
+    check("tube 200 × 100 × 60 : invalide", new Section(Section.Kind.BOX, 200, 100, 60, 0, false).problem() != null ? 1 : 0, 1);
+    check("I à âme plus large que les ailes : invalide", new Section(Section.Kind.I_SECTION, 300, 100, 120, 10, false).problem() != null ? 1 : 0, 1);
+    check("rond : ne se tourne pas", new Section(Section.Kind.ROUND, 20, 0, 0).turned(true).turned() ? 1 : 0, 0);
+
+    // the same A, I, v typed in: the same results
+    Structure a = new Structure(), c = new Structure();
+    for (Structure st : new Structure[] {a, c}) {
+      Node n0 = st.addNode(0, 0), n1 = st.addNode(3, 0);
+      n0.support = Support.ENCASTREMENT;
+      n1.fy = -P;
+      st.addElement(n0, n1, false);
+    }
+    Section t = new Section(Section.Kind.T_SECTION, 100, 100, 8, 10, false);
+    a.elements.get(0).section = t;
+    c.elements.get(0).section = new Section(Section.Kind.CUSTOM, t.area() * 1e4, t.inertia() * 1e8, t.fibre() * 1e2);
+    Solution sa = Solver.solve(a), sc = Solver.solve(c);
+    check("T et ses A, I, v saisis : même flèche", sa.disp[1][1], sc.disp[1][1]);
+    check("T et ses A, I, v saisis : même σ max", sa.of(a.elements.get(0)).sigmaMax(), sc.of(c.elements.get(0)).sigmaMax());
+
+    // kept in a file, turned or not; a version 2 file still reads
+    a.elements.get(0).section = new Section(Section.Kind.CHANNEL, 200, 75, 8.5, 11.5, true);
+    Section back = StructureFile.read(StructureFile.write(a)).elements.get(0).section;
+    check("U tourné relu du fichier", back.equals(a.elements.get(0).section) ? 1 : 0, 1);
+    Structure v2 = StructureFile.read("RDM 2\nselfweight 0\nnode 0.0 0.0 ENCASTREMENT 90.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n"
+        + "node 2.0 0.0 NONE 90.0 0.0 -1000.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\nelem 1 2 0 0 RECT 50.0 100.0 0.0 70000.0 2700.0\n");
+    check("fichier version 2 : section", v2.elements.get(0).section.inertia(), 50 * Math.pow(100, 3) / 12 * 1e-12);
+    check("fichier version 2 : matériau", v2.elements.get(0).material.rho(), 2700);
+  }
+
+  private static void section(String name, Section s, double area, double inertia, double fibre) {
+    check(name + " : A", s.area(), area * 1e-6);
+    check(name + " : I", s.inertia(), inertia * 1e-12);
+    check(name + " : v", s.fibre(), fibre * 1e-3);
   }
 
   /**
