@@ -242,7 +242,7 @@ final class Fr {
       "report.bucklingNever", "rien de comprimé",
       "report.bucklingIn", "La plus faible : %s, %s",
       "report.bucklingNone", "Rien n'est comprimé : ces charges, si grandes soient-elles, ne font pas flamber la structure.",
-      "report.bucklingWhat", "Coefficients de charge critique λc : toutes les charges multipliées par λc (aux nœuds et le long des éléments) font flamber la structure, c'est la charge critique.",
+      "report.bucklingWhat", "Coefficients de charge critique λc : toutes les charges multipliées par λc (aux nœuds et le long des éléments) sont la charge critique, sous laquelle la structure flambe.",
       "report.bucklingMode", "  Mode %d : λc = %s",
       "report.bucklingSafe", "Coefficient de sécurité au flambement λc = %s > 1 : la structure ne flambe pas sous ces charges.",
       "report.bucklingUnsafe", "Coefficient de sécurité au flambement λc = %s < 1 : la structure flambe sous ces charges.",

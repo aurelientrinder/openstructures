@@ -88,7 +88,7 @@ public final class Buckling {
 
     /** Slenderness L_f / i, i = √(I/A) the radius of gyration. */
     public double slenderness(double factor) {
-      return length(factor) / Math.sqrt(EI / A);
+      return length(factor) / Math.sqrt(element.section.inertia() / A);
     }
   }
 

@@ -242,7 +242,7 @@ final class En {
       "report.bucklingNever", "nothing compressed",
       "report.bucklingIn", "The smallest: %s, %s",
       "report.bucklingNone", "Nothing is compressed: these loads, however large, do not make the structure buckle.",
-      "report.bucklingWhat", "Critical load factors λcr: every load times λcr (on the nodes and along the elements) makes the structure buckle, the critical load.",
+      "report.bucklingWhat", "Critical load factors λcr: every load times λcr (on the nodes and along the elements) is the critical load, under which the structure buckles.",
       "report.bucklingMode", "  Mode %d: λcr = %s",
       "report.bucklingSafe", "Safety factor against buckling λcr = %s > 1: the structure does not buckle under these loads.",
       "report.bucklingUnsafe", "Safety factor against buckling λcr = %s < 1: the structure buckles under these loads.",

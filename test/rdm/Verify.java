@@ -644,6 +644,7 @@ public final class Verify {
     near("buckling, pinned-pinned column: mode 1 largest at mid-height, at 1", one.displacement(e, L / 2)[0], 1, 1e-9);
     check("buckling, pinned-pinned column: mode 1 sideways only", Math.abs(one.displacement(e, L / 3)[1]), 0);
     near("buckling, pinned-pinned column: Euler's load of the element π²EI/L²", b.of(e).euler(), euler, 1e-12);
+    near("buckling, pinned-pinned column: slenderness L/i = L√12/h", b.of(e).slenderness(b.factor()), L * Math.sqrt(12) / 0.1, 1e-3);
     near("buckling, fixed-free column: mode 2 at 9π²EI/4L²", Buckling.of(Solver.solve(column(1, Support.ENCASTREMENT, Support.NONE))).modes.get(1).factor * P,
         9 * euler / 4, 1e-3);
     near("buckling, pinned-pinned column in 3 elements: π²EI/L²", Buckling.of(Solver.solve(column(3, Support.PIVOT, Support.APPUI_SIMPLE))).factor() * P,
