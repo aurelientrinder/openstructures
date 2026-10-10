@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="rdm">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/rdm.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
