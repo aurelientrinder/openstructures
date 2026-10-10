@@ -481,23 +481,23 @@ public final class Verify {
   static void combinations() {
     Structure s = withCases();
     LoadCase g = s.cases.get(0), q = s.cases.get(1), w = s.cases.get(2);
-    check("combinaisons engendrées : 4", s.combinations.size(), 4);
+    check("generated combinations: 4", s.combinations.size(), 4);
     double[][] expected = {{1.35, 1.5, 1.05}, {1.35, 1.05, 1.5}, {1, 1.5, 0}, {1, 0, 1.5}};
     for (int i = 0; i < 4; i++) {
       var k = s.combinations.get(i);
-      check("combinaison " + (i + 1) + " : facteurs EN 1990", Math.abs(k.factor(g) - expected[i][0]) + Math.abs(k.factor(q) - expected[i][1])
+      check("combination " + (i + 1) + ": EN 1990 factors", Math.abs(k.factor(g) - expected[i][0]) + Math.abs(k.factor(q) - expected[i][1])
           + Math.abs(k.factor(w) - expected[i][2]), 0);
     }
-    check("combinaisons engendrées deux fois : rien de plus", s.generateCombinations(), 0);
+    check("combinations generated twice: nothing more", s.generateCombinations(), 0);
     Structure onlyG = beam(1);
     onlyG.generateCombinations();
-    check("sans charge variable : 1,35 G", onlyG.combinations.size() == 1 && onlyG.combinations.get(0).factor(g(onlyG)) == 1.35 ? 1 : 0, 1);
+    check("no variable load: 1.35 G", onlyG.combinations.size() == 1 && onlyG.combinations.get(0).factor(g(onlyG)) == 1.35 ? 1 : 0, 1);
 
     List<Solution> alone = s.cases.stream().map(c -> Solver.solve(s, Loading.of(c))).toList();
     for (var k : s.combinations) {
       Solution sol = Solver.solve(s, k.loading());
-      String name = "combinaison " + k.name;
-      check(name + " : résolue", sol.ok() ? 1 : 0, 1);
+      String name = "combination " + k.name;
+      check(name + ": solved", sol.ok() ? 1 : 0, 1);
       equilibrium(name, s, sol);
       double du = 0, dr = 0, de = 0, umax = 0, fmax = 0;
       for (int i = 0; i < s.nodes.size(); i++) {
@@ -523,9 +523,9 @@ public final class Verify {
           }
         }
       }
-      check(name + " : déplacements = Σ facteur × cas", du / umax, 0);
-      check(name + " : réactions = Σ facteur × cas", dr / fmax, 0);
-      check(name + " : N, T, Mf le long des éléments = Σ facteur × cas", de / fmax, 0);
+      check(name + ": displacements = Σ factor × case", du / umax, 0);
+      check(name + ": reactions = Σ factor × case", dr / fmax, 0);
+      check(name + ": N, V, M along the elements = Σ factor × case", de / fmax, 0);
     }
   }
 
@@ -533,7 +533,7 @@ public final class Verify {
   static void envelope() {
     Structure s = withCases();
     Envelope env = Envelope.of(s);
-    check("enveloppe : résolue", env.ok() ? 1 : 0, 1);
+    check("envelope: solved", env.ok() ? 1 : 0, 1);
     List<Solution> each = s.combinations.stream().map(k -> Solver.solve(s, k.loading())).toList();
     double gap = 0;
     for (Element e : s.elements) {
@@ -549,9 +549,9 @@ public final class Verify {
             lo = Math.min(lo, f.at(r, x));
           }
         }
-        String what = "enveloppe, élément " + s.number(e) + " : " + f;
-        check(what + " max = le plus grand des combinaisons", a.max(f)[a.highest(f)], hi);
-        check(what + " min = le plus petit des combinaisons", a.min(f)[a.lowest(f)], lo);
+        String what = "envelope, element " + s.number(e) + ": " + f;
+        check(what + " max = the largest of the combinations", a.max(f)[a.highest(f)], hi);
+        check(what + " min = the smallest of the combinations", a.min(f)[a.lowest(f)], lo);
         for (int i = 0; i < a.x.length; i++) {
           double top = Double.NEGATIVE_INFINITY, bottom = Double.POSITIVE_INFINITY;
           for (Solution sol : each) {
@@ -562,7 +562,7 @@ public final class Verify {
         }
       }
     }
-    check("enveloppe : en chaque abscisse, les extrêmes des combinaisons", gap, 0);
+    check("envelope: at each abscissa, the extremes of the combinations", gap, 0);
     double rgap = 0;
     for (int i = 0; i < s.nodes.size(); i++) {
       if (env.maxReaction[i] == null) continue;
@@ -575,11 +575,11 @@ public final class Verify {
         rgap = Math.max(rgap, Math.abs(env.maxReaction[i][j] - hi) + Math.abs(env.minReaction[i][j] - lo));
       }
     }
-    check("enveloppe : réactions extrêmes des appuis", rgap / 1e3, 0);
+    check("envelope: extreme reactions of the supports", rgap / 1e3, 0);
     double dmax = each.stream().mapToDouble(sol -> sol.maxDisplacement).max().orElse(-1);
-    check("enveloppe : plus grand déplacement", env.maxDisplacement, dmax);
+    check("envelope: largest displacement", env.maxDisplacement, dmax);
     s.combinations.clear();
-    check("enveloppe sans combinaison : pas de résultat", Envelope.of(s).ok() ? 1 : 0, 0);
+    check("envelope without a combination: no result", Envelope.of(s).ok() ? 1 : 0, 0);
   }
 
   /** Cases and combinations in a file, by name; an older file in one case; a case removed with its loads. */
@@ -588,38 +588,38 @@ public final class Verify {
     s.combinations.get(1).name = "ELU vent dominant";
     String once = StructureFile.write(s);
     Structure back = StructureFile.read(once);
-    check("fichier version 4 : relu à l'identique", StructureFile.write(back).equals(once) ? 1 : 0, 1);
-    check("fichier version 4 : 3 cas, 4 combinaisons", back.cases.size() * 10 + back.combinations.size(), 34);
-    check("fichier version 4 : nom avec espaces", back.combinations.get(1).name.equals("ELU vent dominant") ? 1 : 0, 1);
-    check("fichier version 4 : même réaction pour une combinaison", Solver.solve(back, back.combinations.get(1).loading()).reaction[0][1],
+    check("file version 4: read back identical", StructureFile.write(back).equals(once) ? 1 : 0, 1);
+    check("file version 4: 3 cases, 4 combinations", back.cases.size() * 10 + back.combinations.size(), 34);
+    check("file version 4: name with spaces", back.combinations.get(1).name.equals("ELU vent dominant") ? 1 : 0, 1);
+    check("file version 4: same reaction for a combination", Solver.solve(back, back.combinations.get(1).loading()).reaction[0][1],
         Solver.solve(s, s.combinations.get(1).loading()).reaction[0][1]);
 
     Structure v3 = StructureFile.read("RDM 3\nselfweight 1\nnode 0.0 0.0 ENCASTREMENT 90.0 0.0 0.0 0.0 0.0 0.002 0.0 0.0 0.0 0.0\n"
         + "node 2.0 0.0 NONE 90.0 0.0 -1000.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\nelem 1 2 0 0 RECT 50.0 100.0 0.0 0.0 0 70000.0 2700.0\n"
         + "force 1 0.5 0.0 -500.0 0\n");
     LoadCase only = v3.cases.get(0);
-    check("fichier version 3 : un cas G, permanent", v3.cases.size() == 1 && only.name.equals("G") && only.type == LoadCase.Type.PERMANENT ? 1 : 0, 1);
-    check("fichier version 3 : poids propre dans G", only.selfWeight ? 1 : 0, 1);
-    check("fichier version 3 : charge nodale dans G", v3.nodes.get(1).load(only).fy, -1000);
-    check("fichier version 3 : tassement dans G", v3.nodes.get(0).load(only).settleN, 0.002);
-    check("fichier version 3 : force sur l'élément dans G", v3.elements.get(0).loadsIn(only).size(), 1);
+    check("file version 3: one case G, permanent", v3.cases.size() == 1 && only.name.equals("G") && only.type == LoadCase.Type.PERMANENT ? 1 : 0, 1);
+    check("file version 3: self-weight in G", only.selfWeight ? 1 : 0, 1);
+    check("file version 3: nodal load in G", v3.nodes.get(1).load(only).fy, -1000);
+    check("file version 3: settlement in G", v3.nodes.get(0).load(only).settleN, 0.002);
+    check("file version 3: force on the element in G", v3.elements.get(0).loadsIn(only).size(), 1);
 
     LoadCase w = s.cases.get(2);
-    check("cas supprimé", s.removeCase(w) ? 1 : 0, 1);
-    check("cas supprimé : plus de charge dans ce cas", s.elements.stream().mapToLong(e -> e.loadsIn(w).size()).sum()
+    check("case removed", s.removeCase(w) ? 1 : 0, 1);
+    check("case removed: no load left in it", s.elements.stream().mapToLong(e -> e.loadsIn(w).size()).sum()
         + s.nodes.stream().filter(n -> n.load(w).loaded()).count(), 0);
-    check("cas supprimé : plus de facteur dans les combinaisons", s.combinations.stream().mapToDouble(k -> Math.abs(k.factor(w))).sum(), 0);
-    check("cas supprimé : le fichier se relit", StructureFile.read(StructureFile.write(s)).cases.size(), 2);
+    check("case removed: no factor left in the combinations", s.combinations.stream().mapToDouble(k -> Math.abs(k.factor(w))).sum(), 0);
+    check("case removed: the file reads back", StructureFile.read(StructureFile.write(s)).cases.size(), 2);
     Structure one = beam(1);
-    check("le dernier cas ne se supprime pas", one.removeCase(g(one)) ? 1 : 0, 0);
+    check("the last case cannot be removed", one.removeCase(g(one)) ? 1 : 0, 0);
 
     // cut through a load: each half keeps it in its case
     Structure cut = withCases();
     LoadCase q = cut.cases.get(1);
     Solution before = Solver.solve(cut, Loading.of(q));
     cut.split(cut.elements.get(1), 0.3);
-    check("coupe sur une force du cas Q : elle passe au nœud, dans Q", cut.nodes.get(4).load(q).fy, -6e3);
-    check("coupe : réaction du cas Q inchangée", Solver.solve(cut, Loading.of(q)).reaction[0][1], before.reaction[0][1]);
+    check("cut at a force of case Q: it goes to the node, in Q", cut.nodes.get(4).load(q).fy, -6e3);
+    check("cut: reaction of case Q unchanged", Solver.solve(cut, Loading.of(q)).reaction[0][1], before.reaction[0][1]);
   }
 
   static void readVersion1() {
