@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver and the sections against closed-form results, and the texts (212 checks)
+verify.cmd       :: the solver and the sections against closed-form results, and the texts (319 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -93,10 +93,16 @@ wind (W).
 In French the shear force and the bending moment are written T and Mf, as in French courses; in English V and M.
 
 **Sections.** An element's properties show its section, drawn; *Change…* opens the templates: rectangle, solid
-round, round tube, rectangular hollow, I, T, U (channel), the IPE table, or A, I and v typed in. The chosen one is
-drawn to scale with its dimensions, its centroid G and its bending axis z; its area, inertia, extreme fibre and
-mass per metre follow as the dimensions are typed. A section can be turned 90° to bend about its weak axis.
-Asymmetric sections (T, turned U) are taken about their centroid, with v on the side furthest from it, for σ.
+round, round tube, rectangular hollow, I, T, U (channel), the steel catalogues (IPE, HEA, HEB, UPN, and the
+hollow SHS, RHS, CHS), or A, I and v typed in. The chosen one is drawn to scale with its dimensions, its centroid G
+and its bending axis z; its area, inertia, extreme fibre and mass per metre follow as the dimensions are typed. A
+section can be turned 90° to bend about its weak axis. Asymmetric sections (T, turned U) are taken about their
+centroid, with v on the side furthest from it, for σ.
+
+The rolled sections' A, I and Wel, about both axes, are those printed in the ArcelorMittal sales programme 2024-1
+(dimensions to EN 10365), and v = I / Wel. The hollow sections are hot-finished (EN 10210), in the sizes of the
+Steel for Life Blue Book, with A and I from the formulae of EN 10210-2 Annex A (which its tables are computed
+from). The sources are cited in `src/rdm/model/Catalogue.java`; `Verify` checks rows against them.
 
 ![The section templates: an I section drawn with its dimensions and its bending axis](docs/section.png)
 
@@ -154,7 +160,7 @@ sections.
 
 ## Not yet
 
-Thermal loads, buckling, 3D, shear deformation (Timoshenko), catalogues other than IPE (HEA, HEB, UPN…), angles
+Thermal loads, buckling, 3D, shear deformation (Timoshenko), other catalogues (UB, UC, W…), angles
 (their principal axes are inclined), serviceability and accidental combinations, printing.
 
 ## Contributing

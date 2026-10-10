@@ -10,8 +10,12 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
@@ -139,22 +143,72 @@ final class SectionDialog extends JDialog {
 
   private int row;
 
-  /** The fields of the current kind: its dimensions, or the IPE list; the quarter turn; then the properties. */
+  /**
+   * The lists that choose a catalogue section, each with its label: the sections of a rolled table, or a hollow
+   * section's outside size then its thickness. picked gets the section chosen, not turned.
+   */
+  static Map<String, JComponent> pickers(Section init, Consumer<Section> picked) {
+    Map<String, JComponent> out = new LinkedHashMap<>();
+    Section.Kind k = init.kind();
+    List<Section> all = Section.sizes(k);
+    if (k.rolled()) {
+      JComboBox<String> size = new JComboBox<>();
+      for (Section s : all) size.addItem(s.label());
+      size.setSelectedItem(init.turned(false).label());
+      size.setMaximumRowCount(16);
+      size.addActionListener(e -> picked.accept(all.get(size.getSelectedIndex())));
+      out.put(tr("insp.profile"), size);
+    } else if (!all.isEmpty()) {
+      // the thickness is the last dimension; the sizes are the sections that differ by it only
+      int t = k == Section.Kind.RHS ? 2 : 1;
+      Map<String, List<Section>> sizes = new LinkedHashMap<>();
+      for (Section s : all) sizes.computeIfAbsent(outside(s, t), x -> new ArrayList<>()).add(s);
+      JComboBox<String> size = new JComboBox<>(sizes.keySet().toArray(new String[0]));
+      JComboBox<String> thickness = new JComboBox<>();
+      size.setMaximumRowCount(16);
+      boolean[] filling = {false};
+      // a new size keeps the thickness when it has it, else takes its first
+      Runnable fill = () -> {
+        String was = (String) thickness.getSelectedItem();
+        filling[0] = true;
+        thickness.removeAllItems();
+        for (Section s : sizes.get((String) size.getSelectedItem())) thickness.addItem(Fmt.num(s.param(t)));
+        thickness.setSelectedItem(was);
+        filling[0] = false;
+      };
+      Runnable pick = () -> picked.accept(sizes.get((String) size.getSelectedItem()).get(thickness.getSelectedIndex()));
+      size.setSelectedItem(outside(init, t));
+      fill.run();
+      thickness.setSelectedItem(Fmt.num(init.param(t)));
+      size.addActionListener(e -> {
+        fill.run();
+        pick.run();
+      });
+      thickness.addActionListener(e -> {
+        if (!filling[0]) pick.run();
+      });
+      out.put(tr("insp.profile"), size);
+      out.put(tr("dim.t"), thickness);
+    }
+    return out;
+  }
+
+  /** The outside size of a hollow section, its dimensions before the thickness t: "200 × 100", "Ø114,3". */
+  private static String outside(Section s, int t) {
+    if (s.kind() == Section.Kind.CHS) return "Ø" + Fmt.num(s.p1());
+    return Fmt.num(s.p1()) + " × " + Fmt.num(t == 1 ? s.p1() : s.p2());
+  }
+
+  /** The fields of the current kind: its dimensions, or its catalogue; the quarter turn; then the properties. */
   private void buildForm() {
     form.removeAll();
     row = 0;
     put(heading(current.kind().toString()), null);
     Section.Kind k = current.kind();
-    if (k == Section.Kind.IPE) {
-      JComboBox<String> size = new JComboBox<>();
-      for (double[] r : Section.IPE_TABLE) size.addItem("IPE " + (int) r[0]);
-      size.setSelectedItem("IPE " + (int) current.p1());
-      size.addActionListener(e -> {
-        current = new Section(Section.Kind.IPE, Section.IPE_TABLE[size.getSelectedIndex()][0], 0, 0);
-        changed();
-      });
-      put(new JLabel(tr("insp.profile")), size);
-    }
+    pickers(current, s -> {
+      current = s.turned(current.turned());
+      changed();
+    }).forEach((label, list) -> put(new JLabel(label), list));
     for (int i = 0; i < k.params.size(); i++) {
       int which = i;
       JTextField f = new JTextField(Fmt.num(current.param(i)).replace('−', '-'), 7);
@@ -247,7 +301,8 @@ final class SectionDialog extends JDialog {
     note.setForeground(Color.GRAY);
     note.setText(switch (current.kind()) {
       case BOX, I_SECTION, T_SECTION, CHANNEL -> tr("sectionDialog.thinWalled");
-      case IPE -> tr("sectionDialog.ipe");
+      case IPE, HEA, HEB, UPN -> tr("sectionDialog.rolled");
+      case SHS, RHS, CHS -> tr("sectionDialog.hollow");
       case CUSTOM -> tr("sectionDialog.custom");
       default -> "";
     });
