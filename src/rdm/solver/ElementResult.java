@@ -1,6 +1,11 @@
 package rdm.solver;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.TreeSet;
 import rdm.model.Element;
+import rdm.model.ElementLoad;
 
 /**
  * One element in the solver, and its results: the torseur de cohésion and the deflection all along it.
@@ -10,20 +15,39 @@ import rdm.model.Element;
  *
  * Torseur de cohésion at abscissa x, as in schemes' cohesion.ts: the action of the part after the section (II)
  * on the part before it (I), that is minus the outside actions on I. With f the end forces the nodes apply on
- * the element at a and q the distributed load:
+ * the element at a, and the loads on [0, x]:
  *
- *   N(x) = −(f_x + q_x·x)   T(x) = −(f_y + q_y·x)   Mf(x) = −m_a + f_y·x + q_y·x²/2
+ *   N(x) = −(f_x + Σ p_x)   T(x) = −(f_y + Σ p_y)   Mf(x) = −m_a + f_y·x + Σ p_y·(x − s) − Σ C
  *
  * so that N > 0 in traction and dMf/dx = −T. The deflection follows from v'' = Mf/EI, u' = N/EA, with the end
- * displacements as boundary values: exact for this load, between the nodes as at them.
+ * displacements as boundary values: every term is integrated in closed form (Gauss rules exact for the degree),
+ * so the results are exact between the nodes as at them.
  */
 public final class ElementResult {
+  /** a point load (local axes), at s from node a; a couple has px = py = 0 */
+  private record Point(double s, double px, double py, double c) {}
+
+  /** a distributed load (local axes, N/m), linear from a to b */
+  private record Spread(double a, double b, double px1, double py1, double px2, double py2) {
+    double px(double s) {
+      return b == a ? px1 : px1 + (px2 - px1) * (s - a) / (b - a);
+    }
+
+    double py(double s) {
+      return b == a ? py1 : py1 + (py2 - py1) * (s - a) / (b - a);
+    }
+  }
+
+  /** 3-point Gauss–Legendre on [−1, 1]: exact up to degree 5 */
+  private static final double[] GX = {-Math.sqrt(0.6), 0, Math.sqrt(0.6)};
+  private static final double[] GW = {5.0 / 9, 8.0 / 9, 5.0 / 9};
+
   public final Element element;
   /** indices of the end nodes */
   public final int a, b;
   public final double L, c, s, EA, EI;
-  /** the distributed load on the local axes, N/m */
-  public final double qx, qy;
+  private final List<Point> points = new ArrayList<>();
+  private final List<Spread> spreads = new ArrayList<>();
   final double[][] k = new double[6][6];
   final double[] feq = new double[6];
   /** stiffness and equivalent loads once the hinged rotations are condensed out (zero rows there) */
@@ -36,7 +60,8 @@ public final class ElementResult {
   /** end forces the nodes apply on the element, local axes (N, N·m) */
   public final double[] f = new double[6];
 
-  ElementResult(Element e, int a, int b) {
+  /** @param selfWeight the element's weight per metre (N/m, downwards), 0 for none */
+  ElementResult(Element e, int a, int b, double selfWeight) {
     element = e;
     this.a = a;
     this.b = b;
@@ -46,8 +71,8 @@ public final class ElementResult {
     s = dy / L;
     EA = e.material.pascals() * e.section.area();
     EI = e.material.pascals() * e.section.inertia();
-    qx = c * e.qx + s * e.qy;
-    qy = -s * e.qx + c * e.qy;
+    for (ElementLoad l : e.loads) add(l);
+    if (selfWeight != 0) add(new ElementLoad.Distributed(0, 1, 0, -selfWeight, 0, -selfWeight, false));
 
     double ea = EA / L, ei = EI / L, ei2 = EI / (L * L), ei3 = EI / (L * L * L);
     double[][] K = {
@@ -58,12 +83,65 @@ public final class ElementResult {
         {0, -12 * ei3, -6 * ei2, 0, 12 * ei3, -6 * ei2},
         {0, 6 * ei2, 2 * ei, 0, -6 * ei2, 4 * ei}};
     for (int i = 0; i < 6; i++) System.arraycopy(K[i], 0, k[i], 0, 6);
-    // the loads the nodes would take if both ends were held (fixed-end forces), with their sign as loads
-    double[] q = {qx * L / 2, qy * L / 2, qy * L * L / 12, qx * L / 2, qy * L / 2, -qy * L * L / 12};
-    System.arraycopy(q, 0, feq, 0, 6);
+    equivalentLoads();
 
     released = e.hingeA && e.hingeB ? new int[] {2, 5} : e.hingeA ? new int[] {2} : e.hingeB ? new int[] {5} : new int[0];
     condense();
+  }
+
+  /** The load on the local axes, positions in metres from node a. */
+  private void add(ElementLoad l) {
+    switch (l) {
+      case ElementLoad.Force f -> {
+        double[] p = f.local() ? new double[] {f.fx(), f.fy()} : toLocal(f.fx(), f.fy());
+        points.add(new Point(f.t() * L, p[0], p[1], 0));
+      }
+      case ElementLoad.Couple cp -> points.add(new Point(cp.t() * L, 0, 0, cp.c()));
+      case ElementLoad.Distributed d -> {
+        double[] p1 = d.local() ? new double[] {d.qx1(), d.qy1()} : toLocal(d.qx1(), d.qy1());
+        double[] p2 = d.local() ? new double[] {d.qx2(), d.qy2()} : toLocal(d.qx2(), d.qy2());
+        if (d.t2() > d.t1()) spreads.add(new Spread(d.t1() * L, d.t2() * L, p1[0], p1[1], p2[0], p2[1]));
+      }
+    }
+  }
+
+  private double[] toLocal(double gx, double gy) {
+    return new double[] {c * gx + s * gy, -s * gx + c * gy};
+  }
+
+  /**
+   * The loads the nodes would take if both ends were held (fixed-end forces, as loads): the work of each load in
+   * the cubic (bending) and linear (traction) shape functions. For an Euler–Bernoulli beam they are exact.
+   */
+  private void equivalentLoads() {
+    for (Point p : points) {
+      double[] n = shape(p.s), d = slope(p.s);
+      feq[0] += (1 - p.s / L) * p.px;
+      feq[3] += p.s / L * p.px;
+      for (int i = 0; i < 4; i++) feq[i < 2 ? i + 1 : i + 2] += n[i] * p.py + d[i] * p.c;
+    }
+    for (Spread q : spreads) {
+      double h = (q.b - q.a) / 2, m = (q.a + q.b) / 2;
+      for (int g = 0; g < 3; g++) {
+        double x = m + h * GX[g], w = h * GW[g];
+        double[] n = shape(x);
+        feq[0] += w * (1 - x / L) * q.px(x);
+        feq[3] += w * x / L * q.px(x);
+        for (int i = 0; i < 4; i++) feq[i < 2 ? i + 1 : i + 2] += w * n[i] * q.py(x);
+      }
+    }
+  }
+
+  /** Hermite shape functions at x: v_a, θ_a, v_b, θ_b. */
+  private double[] shape(double x) {
+    double t = x / L;
+    return new double[] {1 - 3 * t * t + 2 * t * t * t, L * (t - 2 * t * t + t * t * t), 3 * t * t - 2 * t * t * t, L * (t * t * t - t * t)};
+  }
+
+  /** Their derivatives along x (a couple works in the slope). */
+  private double[] slope(double x) {
+    double t = x / L;
+    return new double[] {(-6 * t + 6 * t * t) / L, 1 - 4 * t + 3 * t * t, (6 * t - 6 * t * t) / L, 3 * t * t - 2 * t};
   }
 
   /**
@@ -133,24 +211,59 @@ public final class ElementResult {
     }
   }
 
+  // ——— the loads on [0, x] ———
+
+  /**
+   * Sums over the loads before x (points strictly before): {Σp_x, Σp_x·(x−s), Σp_y, Σp_y·(x−s) − ΣC,
+   * Σp_y·(x−s)³/6 − ΣC·(x−s)²/2}, the last being the double integral of the load's share of Mf.
+   */
+  private double[] before(double x) {
+    double[] r = new double[5];
+    for (Point p : points) {
+      if (p.s >= x) continue;
+      double d = x - p.s;
+      r[0] += p.px;
+      r[1] += p.px * d;
+      r[2] += p.py;
+      r[3] += p.py * d - p.c;
+      r[4] += p.py * d * d * d / 6 - p.c * d * d / 2;
+    }
+    for (Spread q : spreads) {
+      double end = Math.min(x, q.b);
+      if (end <= q.a) continue;
+      double h = (end - q.a) / 2, m = (q.a + end) / 2;
+      for (int g = 0; g < 3; g++) {
+        double sg = m + h * GX[g], w = h * GW[g], d = x - sg;
+        double px = q.px(sg), py = q.py(sg);
+        r[0] += w * px;
+        r[1] += w * px * d;
+        r[2] += w * py;
+        r[3] += w * py * d;
+        // degree 4 in s on the piece: still exact
+        r[4] += w * py * d * d * d / 6;
+      }
+    }
+    return r;
+  }
+
   /** Effort normal (N), positive in traction. */
   public double N(double x) {
-    return -(f[0] + qx * x);
+    return -(f[0] + before(x)[0]);
   }
 
   /** Effort tranchant T_y (N). */
   public double T(double x) {
-    return -(f[1] + qy * x);
+    return -(f[1] + before(x)[2]);
   }
 
   /** Moment fléchissant Mf_z (N·m). */
   public double M(double x) {
-    return -f[2] + f[1] * x + qy * x * x / 2;
+    return -f[2] + f[1] * x + before(x)[3];
   }
 
   /** Displacement along the element (local x), m. */
   public double axial(double x) {
-    return u[0] - (f[0] * x + qx * x * x / 2) / EA;
+    return u[0] - (f[0] * x + before(x)[1]) / EA;
   }
 
   /** Deflection across the element (local y), m. */
@@ -161,7 +274,7 @@ public final class ElementResult {
 
   /** ∫∫ Mf/EI from 0, without the rigid part. */
   private double bend(double x) {
-    return (-f[2] * x * x / 2 + f[1] * x * x * x / 6 + qy * x * x * x * x / 24) / EI;
+    return (-f[2] * x * x / 2 + f[1] * x * x * x / 6 + before(x)[4]) / EI;
   }
 
   /** Displacement of the point at abscissa x, on the global axes (m). */
@@ -170,39 +283,106 @@ public final class ElementResult {
     return new double[] {c * ul - s * vl, s * ul + c * vl};
   }
 
-  /** Where Mf is extreme inside the element (T = 0), or −1. */
-  public double momentPeak() {
-    if (qy == 0) return -1;
-    double x = -f[1] / qy;
-    return x > 0 && x < L ? x : -1;
+  // ——— where to look ———
+
+  /** Where N, T or Mf may jump or bend: the point loads, and the ends of the distributed ones. */
+  private TreeSet<Double> breaks() {
+    TreeSet<Double> out = new TreeSet<>();
+    for (Point p : points) out.add(p.s);
+    for (Spread q : spreads) {
+      out.add(q.a);
+      out.add(q.b);
+    }
+    out.removeIf(v -> v <= 0 || v >= L);
+    return out;
+  }
+
+  /**
+   * Abscissas to draw the element's curves at: n even steps, and each side of every jump (a hair apart), sorted.
+   */
+  public double[] samples(int n) {
+    TreeSet<Double> xs = new TreeSet<>();
+    for (int i = 0; i <= n; i++) xs.add(L * i / n);
+    double eps = 1e-9 * L;
+    for (double b : breaks()) {
+      xs.add(b - eps);
+      xs.add(b + eps);
+    }
+    return xs.stream().mapToDouble(Double::doubleValue).toArray();
+  }
+
+  /** The abscissa of the largest |Mf|: at an end, either side of a jump, or where T = 0 (found by bisection). */
+  public double maxMAt() {
+    List<Double> cands = new ArrayList<>(List.of(0.0, L));
+    double eps = 1e-9 * L;
+    List<Double> edges = new ArrayList<>();
+    edges.add(0.0);
+    for (double b : breaks()) {
+      // Mf is continuous under a force (the peak is right there), it jumps only at a couple
+      cands.add(b);
+      cands.add(b - eps);
+      cands.add(b + eps);
+      edges.add(b);
+    }
+    edges.add(L);
+    // on each piece T is a polynomial of degree ≤ 2: its sign changes show the extrema of Mf
+    for (int i = 0; i + 1 < edges.size(); i++) {
+      double lo = edges.get(i) + eps, hi = edges.get(i + 1) - eps;
+      int n = 32;
+      double prevX = lo, prevT = T(lo);
+      for (int j = 1; j <= n; j++) {
+        double x = lo + (hi - lo) * j / n, t = T(x);
+        if (prevT == 0) cands.add(prevX);
+        else if (prevT * t < 0) cands.add(root(prevX, x));
+        prevX = x;
+        prevT = t;
+      }
+    }
+    double best = 0, at = 0;
+    for (double x : cands) {
+      double m = Math.abs(M(x));
+      if (m > best) {
+        best = m;
+        at = x;
+      }
+    }
+    return at;
+  }
+
+  private double root(double lo, double hi) {
+    double tl = T(lo);
+    for (int i = 0; i < 80; i++) {
+      double m = (lo + hi) / 2, tm = T(m);
+      if (tl * tm <= 0) hi = m;
+      else {
+        lo = m;
+        tl = tm;
+      }
+    }
+    return (lo + hi) / 2;
   }
 
   public double maxAbsM() {
-    double m = Math.max(Math.abs(M(0)), Math.abs(M(L)));
-    double p = momentPeak();
-    return p > 0 ? Math.max(m, Math.abs(M(p))) : m;
+    return Math.abs(M(maxMAt()));
   }
 
   public double maxAbsN() {
-    return Math.max(Math.abs(N(0)), Math.abs(N(L)));
+    return maxAbs(this::N);
   }
 
   public double maxAbsT() {
-    return Math.max(Math.abs(T(0)), Math.abs(T(L)));
+    return maxAbs(this::T);
+  }
+
+  private double maxAbs(java.util.function.DoubleUnaryOperator q) {
+    return Arrays.stream(samples(200)).map(x -> Math.abs(q.applyAsDouble(x))).max().orElse(0);
   }
 
   /** Largest normal stress |N|/A + |Mf|·v/I along the element (Pa). */
   public double sigmaMax() {
     double A = element.section.area(), W = element.section.inertia() / element.section.fibre();
-    double best = 0;
-    int n = 200;
-    for (int i = 0; i <= n; i++) best = Math.max(best, sigma(L * i / n, A, W));
-    double p = momentPeak();
-    if (p > 0) best = Math.max(best, sigma(p, A, W));
+    double best = Math.abs(N(maxMAt())) / A + maxAbsM() / W;
+    for (double x : samples(200)) best = Math.max(best, Math.abs(N(x)) / A + Math.abs(M(x)) / W);
     return best;
-  }
-
-  private double sigma(double x, double A, double W) {
-    return Math.abs(N(x)) / A + Math.abs(M(x)) / W;
   }
 }

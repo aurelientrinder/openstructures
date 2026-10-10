@@ -1,5 +1,8 @@
 package rdm.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * A straight element between two nodes: a beam (poutre: traction, compression and bending) whose ends are
  * welded to their nodes unless a hinge (rotule) releases the rotation there. A truss bar (barre) is an
@@ -10,8 +13,8 @@ public final class Element {
   public boolean hingeA, hingeB;
   public Section section;
   public Material material = Material.STEEL;
-  /** uniform distributed load, N per metre of element, on the global axes */
-  public double qx, qy;
+  /** the loads along it (the self-weight is added by the solver when the structure asks for it) */
+  public final List<ElementLoad> loads = new ArrayList<>();
 
   public Element(Node a, Node b, Section section) {
     this.a = a;
@@ -24,7 +27,7 @@ public final class Element {
   }
 
   public boolean loaded() {
-    return qx != 0 || qy != 0;
+    return !loads.isEmpty();
   }
 
   public double length() {
@@ -33,5 +36,11 @@ public final class Element {
 
   public boolean touches(Node n) {
     return a == n || b == n;
+  }
+
+  /** Global components of a load given on this element's local axes (x from a to b). */
+  public double[] toGlobal(double lx, double ly) {
+    double L = length(), c = (b.x - a.x) / L, s = (b.y - a.y) / L;
+    return new double[] {c * lx - s * ly, s * lx + c * ly};
   }
 }

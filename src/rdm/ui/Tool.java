@@ -12,9 +12,10 @@ enum Tool {
   PIVOT("Pivot", 'D', "Cliquer un nœud : pivot / appui double (bloque x et y)", Support.PIVOT),
   ROLLER("Appui simple", 'R', "Cliquer un nœud : appui simple (bloque la normale ; angle dans les propriétés)", Support.APPUI_SIMPLE),
   SLIDER("Glissière", 'G', "Cliquer un nœud : glissière (bloque la normale et la rotation)", Support.GLISSIERE),
-  FORCE("Force", 'F', "Cliquer un nœud : force (kN)"),
-  MOMENT("Couple", 'M', "Cliquer un nœud : couple (kN·m, sens trigonométrique positif)"),
-  DISTRIBUTED("Charge répartie", 'Q', "Cliquer un élément : charge uniforme (kN/m)"),
+  SPRING("Appui élastique", 'K', "Cliquer un nœud : appui élastique (raideurs dans les propriétés)", Support.ELASTIQUE),
+  FORCE("Force", 'F', "Cliquer un nœud ou un point d'un élément : force (kN)"),
+  MOMENT("Couple", 'M', "Cliquer un nœud ou un point d'un élément : couple (kN·m, sens trigonométrique positif)"),
+  DISTRIBUTED("Charge répartie", 'Q', "Cliquer un élément : charge répartie, uniforme ou linéaire, sur tout ou partie (kN/m)"),
   HINGE("Rotule", 'H', "Cliquer un élément près d'un bout : rotule (articulation) à ce bout"),
   DELETE("Effacer", 'X', "Cliquer un nœud ou un élément pour l'effacer");
 

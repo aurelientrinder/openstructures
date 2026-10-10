@@ -32,6 +32,7 @@ final class Report {
     b.append(String.format("Degré d'hyperstatisme h = %d, mobilité m = 0%n", sol.h));
     for (String w : sol.warnings) b.append("Attention : ").append(w).append('\n');
     b.append("Hypothèses : élasticité linéaire, petits déplacements, Euler–Bernoulli.\n");
+    if (s.selfWeight) b.append("Poids propre inclus (ρ·A·g, g = 9,81 m/s²).\n");
 
     b.append("\nDéplacements des nœuds (repère global)\n");
     b.append(row("Nœud", "ux (mm)", "uy (mm)", "θz (mrad)"));
@@ -40,7 +41,7 @@ final class Report {
       b.append(row(Integer.toString(i + 1), Fmt.num(d[0] * 1e3), Fmt.num(d[1] * 1e3), Fmt.num(d[2] * 1e3)));
     }
 
-    b.append("\nActions des appuis sur la structure\n");
+    b.append("\nActions des appuis sur la structure (appui élastique : effort des ressorts, −k·u)\n");
     b.append(row("Nœud", "Rx (kN)", "Ry (kN)", "Mz (kN·m)", "Appui"));
     double sx = 0, sy = 0;
     for (int i = 0; i < s.nodes.size(); i++) {

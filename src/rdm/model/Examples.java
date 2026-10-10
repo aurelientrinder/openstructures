@@ -17,6 +17,12 @@ public final class Examples {
     ALL.put("Portique encastré", Examples::portal);
     ALL.put("Portique à trois articulations", Examples::threeHinged);
     ALL.put("Treillis Warren", Examples::warren);
+    ALL.put("Poutre : force, couple et charge triangulaire", Examples::mixedLoads);
+    ALL.put("Poutre continue sur appui élastique, avec tassement", Examples::springAndSettlement);
+  }
+
+  private static void uniform(Element e, double qy) {
+    e.loads.add(ElementLoad.Distributed.uniform(0, qy));
   }
 
   static Structure cantilever() {
@@ -33,7 +39,7 @@ public final class Examples {
     Node a = s.addNode(0, 0), b = s.addNode(6, 0);
     a.support = Support.PIVOT;
     b.support = Support.APPUI_SIMPLE;
-    s.addElement(a, b, false).qy = -5e3;
+    uniform(s.addElement(a, b, false), -5e3);
     return s;
   }
 
@@ -43,8 +49,8 @@ public final class Examples {
     a.support = Support.PIVOT;
     b.support = Support.APPUI_SIMPLE;
     c.support = Support.APPUI_SIMPLE;
-    s.addElement(a, b, false).qy = -10e3;
-    s.addElement(b, c, false).qy = -10e3;
+    uniform(s.addElement(a, b, false), -10e3);
+    uniform(s.addElement(b, c, false), -10e3);
     return s;
   }
 
@@ -54,7 +60,7 @@ public final class Examples {
     a.support = d.support = Support.ENCASTREMENT;
     b.fx = 5e3;
     s.addElement(a, b, false);
-    s.addElement(b, c, false).qy = -8e3;
+    uniform(s.addElement(b, c, false), -8e3);
     s.addElement(c, d, false);
     return s;
   }
@@ -64,7 +70,7 @@ public final class Examples {
     Node a = s.addNode(0, 0), b = s.addNode(0, 3), top = s.addNode(4, 5), c = s.addNode(8, 3), d = s.addNode(8, 0);
     a.support = d.support = Support.PIVOT;
     s.addElement(a, b, false);
-    s.addElement(b, top, false).qy = -6e3;
+    uniform(s.addElement(b, top, false), -6e3);
     s.addElement(top, c, false).hingeA = true;
     s.addElement(c, d, false);
     return s;
@@ -87,6 +93,32 @@ public final class Examples {
       s.addElement(high[i], low[i + 1], true);
       if (i + 1 < panels) s.addElement(high[i], high[i + 1], true);
     }
+    return s;
+  }
+
+  static Structure mixedLoads() {
+    Structure s = new Structure();
+    Node a = s.addNode(0, 0), b = s.addNode(6, 0), c = s.addNode(8, 0);
+    a.support = Support.PIVOT;
+    b.support = Support.APPUI_SIMPLE;
+    Element span = s.addElement(a, b, false);
+    span.loads.add(new ElementLoad.Force(1.0 / 3, 0, -15e3, false));
+    span.loads.add(new ElementLoad.Distributed(0.5, 1, 0, 0, 0, -8e3, false));
+    s.addElement(b, c, false).loads.add(new ElementLoad.Couple(0.5, 5e3));
+    c.fy = -4e3;
+    return s;
+  }
+
+  static Structure springAndSettlement() {
+    Structure s = new Structure();
+    Node a = s.addNode(0, 0), b = s.addNode(5, 0), c = s.addNode(10, 0);
+    a.support = Support.ENCASTREMENT;
+    b.support = Support.ELASTIQUE;
+    b.springN = 5e6;
+    c.support = Support.APPUI_SIMPLE;
+    c.settleN = -0.01;
+    uniform(s.addElement(a, b, false), -10e3);
+    uniform(s.addElement(b, c, false), -10e3);
     return s;
   }
 }

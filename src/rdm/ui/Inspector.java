@@ -15,6 +15,7 @@ import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -24,6 +25,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.Scrollable;
 import rdm.model.Element;
+import rdm.model.ElementLoad;
 import rdm.model.Material;
 import rdm.model.Node;
 import rdm.model.Section;
@@ -71,6 +73,8 @@ final class Inspector extends JPanel implements Scrollable {
     if (sel instanceof Element e) {
       k.add(e.section.kind());
       k.add(e.material.name());
+      // the list of loads is a row each: built again when it changes
+      k.add(List.copyOf(e.loads));
     }
     return k;
   }
@@ -102,6 +106,7 @@ final class Inspector extends JPanel implements Scrollable {
       value("Hyperstatisme, h", () -> Integer.toString(app.solution().h));
       value("Mobilité, m", () -> Integer.toString(app.solution().m));
     }
+    check("Poids propre (ρ·A·g, g = 9,81 m/s²)", () -> app.structure().selfWeight, v -> app.structure().selfWeight = v);
     heading("Mode d'emploi");
     note("Dessinez avec Poutre ou Barre, posez des appuis sur les nœuds, puis des charges. Le calcul se refait à chaque modification.", false);
     note("Cliquez un nœud ou un élément pour voir et modifier ses données. Survolez la structure pour lire N, T, Mf et le déplacement "
@@ -127,6 +132,17 @@ final class Inspector extends JPanel implements Scrollable {
     if (n.support.skewed() || n.support == Support.PIVOT) {
       number("Normale (° depuis x)", () -> n.supportAngle, v -> n.supportAngle = v);
     }
+    // a blocked component may settle; a skewed support's are along t and n, the others' along x and y
+    String[] axis = n.support.skewed() ? new String[] {"selon t", "selon n"} : new String[] {"ux", "uy"};
+    if (n.support == Support.ELASTIQUE) {
+      number("Raideur " + axis[0] + " (kN/m)", () -> n.springT / 1e3, v -> n.springT = v * 1e3);
+      number("Raideur " + axis[1] + " (kN/m)", () -> n.springN / 1e3, v -> n.springN = v * 1e3);
+      number("Raideur en rotation (kN·m/rad)", () -> n.springR / 1e3, v -> n.springR = v * 1e3);
+    } else if (n.support != Support.NONE) {
+      if (n.support.t) number((n.support.skewed() ? "u imposé " + axis[0] : axis[0] + " imposé") + " (mm)", () -> n.settleT * 1e3, v -> n.settleT = v / 1e3);
+      if (n.support.n) number((n.support.skewed() ? "u imposé " + axis[1] : axis[1] + " imposé") + " (mm)", () -> n.settleN * 1e3, v -> n.settleN = v / 1e3);
+      if (n.support.r) number("θz imposé (mrad)", () -> n.settleR * 1e3, v -> n.settleR = v / 1e3);
+    }
     heading("Charges");
     number("Fx (kN)", () -> n.fx / 1e3, v -> n.fx = v * 1e3);
     number("Fy (kN)", () -> n.fy / 1e3, v -> n.fy = v * 1e3);
@@ -143,6 +159,46 @@ final class Inspector extends JPanel implements Scrollable {
         value("Réaction Mz", () -> reaction(i, 2, true));
       }
     }
+  }
+
+  /** A load of the element: what it is, a button to change it, one to remove it. */
+  private void loadRow(Element e, ElementLoad l) {
+    JPanel line = new JPanel(new java.awt.BorderLayout(4, 0));
+    JTextArea text = new JTextArea(LoadDialog.describe(e, l));
+    text.setLineWrap(true);
+    text.setWrapStyleWord(true);
+    text.setEditable(false);
+    text.setOpaque(false);
+    text.setFont(getFont());
+    text.setColumns(8);
+    line.add(text, java.awt.BorderLayout.CENTER);
+    JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0));
+    JButton change = new JButton("Modifier");
+    change.addActionListener(ev -> {
+      ElementLoad v = LoadDialog.edit(this, e, l);
+      if (v != null) app.edit(() -> e.loads.set(e.loads.indexOf(l), v));
+    });
+    JButton remove = new JButton("×");
+    remove.setToolTipText("Supprimer cette charge");
+    remove.addActionListener(ev -> app.edit(() -> e.loads.remove(l)));
+    buttons.add(change);
+    buttons.add(remove);
+    line.add(buttons, java.awt.BorderLayout.EAST);
+    GridBagConstraints c = constraints(1);
+    c.gridx = 0;
+    c.gridwidth = 2;
+    add(line, c);
+    row++;
+  }
+
+  /** A button that asks for a new load and adds it to the element. */
+  private JButton button(String label, Supplier<ElementLoad> ask, Element e) {
+    JButton b = new JButton(label);
+    b.addActionListener(ev -> {
+      ElementLoad l = ask.get();
+      if (l != null) app.edit(() -> e.loads.add(l));
+    });
+    return b;
   }
 
   private String reaction(int i, int k, boolean moment) {
@@ -205,11 +261,20 @@ final class Inspector extends JPanel implements Scrollable {
       if (m != null && !m.equals(e.material)) app.edit(() -> e.material = m);
     });
     field("Matériau", mat);
-    number("E (MPa)", () -> e.material.E(), v -> e.material = Material.ofE(v));
+    number("E (MPa)", () -> e.material.E(), v -> e.material = Material.of(v, e.material.rho()));
+    number("ρ (kg/m³)", () -> e.material.rho(), v -> e.material = Material.of(e.material.E(), v));
 
-    heading("Charge répartie (par mètre d'élément)");
-    number("qx (kN/m)", () -> e.qx / 1e3, v -> e.qx = v * 1e3);
-    number("qy (kN/m)", () -> e.qy / 1e3, v -> e.qy = v * 1e3);
+    heading("Charges sur l'élément");
+    if (e.loads.isEmpty()) note("Aucune. Outils Force (F), Couple (M) ou Charge répartie (Q) sur l'élément, ou :", false);
+    for (ElementLoad l : e.loads) loadRow(e, l);
+    JPanel add = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+    add.add(button("+ Force", () -> LoadDialog.force(this, e, new ElementLoad.Force(0.5, 0, -10e3, false)), e));
+    add.add(button("+ Couple", () -> LoadDialog.couple(this, e, new ElementLoad.Couple(0.5, 10e3)), e));
+    add.add(button("+ Répartie", () -> LoadDialog.distributed(this, e, ElementLoad.Distributed.uniform(0, -10e3)), e));
+    GridBagConstraints ac = constraints(0);
+    ac.gridwidth = 2;
+    add(add, ac);
+    row++;
 
     if (app.solution().ok()) {
       heading("Résultats (repère local : x de l'origine vers l'extrémité)");

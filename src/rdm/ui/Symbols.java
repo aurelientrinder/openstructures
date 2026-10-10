@@ -56,6 +56,17 @@ final class Symbols {
         g.draw(new Ellipse2D.Double(1, 7, 5, 5));
         ground(g, 12, 22, false);
       }
+      case ELASTIQUE -> {
+        // a spring along n down to the bâti
+        Path2D z = new Path2D.Double();
+        z.moveTo(0, 0);
+        z.lineTo(0, 5);
+        for (int i = 0; i < 5; i++) z.lineTo(i % 2 == 0 ? 6 : -6, 7 + i * 3.4);
+        z.lineTo(0, 25);
+        z.lineTo(0, 28);
+        g.draw(z);
+        ground(g, 28, 16, false);
+      }
       default -> {}
     }
     g.dispose();

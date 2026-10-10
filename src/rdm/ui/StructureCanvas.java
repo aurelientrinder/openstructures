@@ -24,6 +24,7 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import rdm.model.Element;
+import rdm.model.ElementLoad;
 import rdm.model.Node;
 import rdm.model.Structure;
 import rdm.model.Support;
@@ -288,12 +289,16 @@ final class StructureCanvas extends JPanel {
         });
         chain = p;
       }
-      case ENCASTREMENT, PIVOT, ROLLER, SLIDER -> {
+      case ENCASTREMENT, PIVOT, ROLLER, SLIDER, SPRING -> {
         if (node == null) return;
         app.edit(() -> node.support = node.support == tool.support ? Support.NONE : tool.support);
         app.select(node);
       }
       case FORCE -> {
+        if (node == null && el != null) {
+          addOnElement(el, LoadDialog.force(this, el, new ElementLoad.Force(along(el, (Double) hit[1]), 0, -10e3, false)));
+          return;
+        }
         if (node == null) return;
         double[] v = ask("Force sur le nœud " + s.number(node), new String[] {"Fx (kN)", "Fy (kN)"}, new double[] {node.fx / 1e3, node.fy / 1e3});
         if (v != null) app.edit(() -> {
@@ -303,6 +308,10 @@ final class StructureCanvas extends JPanel {
         app.select(node);
       }
       case MOMENT -> {
+        if (node == null && el != null) {
+          addOnElement(el, LoadDialog.couple(this, el, new ElementLoad.Couple(along(el, (Double) hit[1]), 10e3)));
+          return;
+        }
         if (node == null) return;
         double[] v = ask("Couple sur le nœud " + s.number(node), new String[] {"Mz (kN·m, + trigonométrique)"}, new double[] {node.mz / 1e3});
         if (v != null) app.edit(() -> node.mz = v[0] * 1e3);
@@ -310,12 +319,7 @@ final class StructureCanvas extends JPanel {
       }
       case DISTRIBUTED -> {
         if (el == null) return;
-        double[] v = ask("Charge répartie sur l'élément " + s.number(el), new String[] {"qx (kN/m)", "qy (kN/m)"}, new double[] {el.qx / 1e3, el.qy / 1e3});
-        if (v != null) app.edit(() -> {
-          el.qx = v[0] * 1e3;
-          el.qy = v[1] * 1e3;
-        });
-        app.select(el);
+        addOnElement(el, LoadDialog.distributed(this, el, ElementLoad.Distributed.uniform(0, -10e3)));
       }
       case HINGE -> {
         if (el == null) return;
@@ -331,6 +335,22 @@ final class StructureCanvas extends JPanel {
         else if (el != null) app.edit(() -> s.removeElement(el));
       }
     }
+  }
+
+  /** Adds a load the dialog returned (null: cancelled) and selects its element, whose panel lists its loads. */
+  private void addOnElement(Element el, ElementLoad l) {
+    if (l != null) app.edit(() -> el.loads.add(l));
+    app.select(el);
+  }
+
+  /**
+   * Where along an element a click falls, as a fraction: on the grid's step from its origin when that is inside it,
+   * else as clicked (to the centimetre).
+   */
+  private double along(Element el, double t) {
+    double L = el.length(), x = Math.round(t * L / app.grid) * app.grid;
+    if (x <= 1e-9 || x >= L - 1e-9) x = Math.max(0.01, Math.min(L - 0.01, Math.round(t * L * 100) / 100.0));
+    return x / L;
   }
 
   void deleteSelection() {
@@ -505,21 +525,64 @@ final class StructureCanvas extends JPanel {
         label(g, Fmt.kNm(Math.abs(n.mz)), x + 22, y - 22);
       }
     }
-    for (Element e : s.elements) {
-      double q = Math.hypot(e.qx, e.qy);
-      if (q == 0) continue;
-      double ux = e.qx / q, uy = -e.qy / q;
-      double ax = sx(e.a.x), ay = sy(e.a.y), bx = sx(e.b.x), by = sy(e.b.y);
-      int count = Math.max(2, (int) (Math.hypot(bx - ax, by - ay) / 24) + 1);
-      g.setStroke(new BasicStroke(1.2f));
-      for (int i = 0; i < count; i++) {
-        double t = (double) i / (count - 1), px = ax + t * (bx - ax), py = ay + t * (by - ay);
-        g.draw(new Line2D.Double(px - ux * 30, py - uy * 30, px - ux * 3, py - uy * 3));
-        Symbols.head(g, px - ux * 3, py - uy * 3, ux, uy, 6);
+    for (Element e : s.elements) for (ElementLoad l : e.loads) paintLoad(g, e, l);
+    if (s.selfWeight && !s.elements.isEmpty()) {
+      g.setFont(g.getFont().deriveFont(Font.BOLD));
+      g.drawString("Poids propre inclus", 12, getHeight() - 30);
+      g.setFont(g.getFont().deriveFont(Font.PLAIN));
+    }
+  }
+
+  private void paintLoad(Graphics2D g, Element e, ElementLoad l) {
+    double ax = sx(e.a.x), ay = sy(e.a.y), bx = sx(e.b.x), by = sy(e.b.y);
+    switch (l) {
+      case ElementLoad.Force f -> {
+        double[] v = f.local() ? e.toGlobal(f.fx(), f.fy()) : new double[] {f.fx(), f.fy()};
+        double m = Math.hypot(v[0], v[1]);
+        if (m == 0) return;
+        double x = ax + f.t() * (bx - ax), y = ay + f.t() * (by - ay), ux = v[0] / m, uy = -v[1] / m;
+        g.setStroke(new BasicStroke(2f));
+        Symbols.arrow(g, x - ux * 50, y - uy * 50, x - ux * 3, y - uy * 3);
+        label(g, Fmt.kN(m), x - ux * 58, y - uy * 58);
       }
-      g.draw(new Line2D.Double(ax - ux * 30, ay - uy * 30, bx - ux * 30, by - uy * 30));
-      String text = e.qx != 0 && e.qy != 0 ? "qx = " + Fmt.num(e.qx / 1e3) + ", qy = " + Fmt.num(e.qy / 1e3) + " kN/m" : "q = " + Fmt.num(q / 1e3) + " kN/m";
-      label(g, text, (ax + bx) / 2 - ux * 40, (ay + by) / 2 - uy * 40);
+      case ElementLoad.Couple c -> {
+        double x = ax + c.t() * (bx - ax), y = ay + c.t() * (by - ay);
+        g.setStroke(new BasicStroke(2f));
+        Symbols.moment(g, x, y, 16, c.c() > 0);
+        label(g, Fmt.kNm(Math.abs(c.c())), x + 18, y - 22);
+      }
+      case ElementLoad.Distributed d -> {
+        // arrows as long as the load where they stand (the larger end at 32 px), tips on the element
+        double[] q1 = d.local() ? e.toGlobal(d.qx1(), d.qy1()) : new double[] {d.qx1(), d.qy1()};
+        double[] q2 = d.local() ? e.toGlobal(d.qx2(), d.qy2()) : new double[] {d.qx2(), d.qy2()};
+        double top = Math.max(Math.hypot(q1[0], q1[1]), Math.hypot(q2[0], q2[1]));
+        if (top == 0) return;
+        double px = 32 / top;
+        double x1 = ax + d.t1() * (bx - ax), y1 = ay + d.t1() * (by - ay), x2 = ax + d.t2() * (bx - ax), y2 = ay + d.t2() * (by - ay);
+        int count = Math.max(2, (int) (Math.hypot(x2 - x1, y2 - y1) / 22) + 1);
+        g.setStroke(new BasicStroke(1.2f));
+        Path2D tails = new Path2D.Double();
+        for (int i = 0; i < count; i++) {
+          double k = (double) i / (count - 1);
+          double qx = q1[0] + k * (q2[0] - q1[0]), qy = q1[1] + k * (q2[1] - q1[1]);
+          double x = x1 + k * (x2 - x1), y = y1 + k * (y2 - y1), tx = x - qx * px, ty = y + qy * px;
+          if (i == 0) tails.moveTo(tx, ty);
+          else tails.lineTo(tx, ty);
+          double m = Math.hypot(qx, qy);
+          if (m * px < 4) continue;
+          g.draw(new Line2D.Double(tx, ty, x - qx / m * 3, y + qy / m * 3));
+          Symbols.head(g, x - qx / m * 3, y + qy / m * 3, qx, -qy, 6);
+        }
+        g.draw(tails);
+        g.draw(new Line2D.Double(x1, y1, x1 - q1[0] * px, y1 + q1[1] * px));
+        g.draw(new Line2D.Double(x2, y2, x2 - q2[0] * px, y2 + q2[1] * px));
+        boolean uniform = q1[0] == q2[0] && q1[1] == q2[1];
+        String text = uniform ? Fmt.num(Math.hypot(q1[0], q1[1]) / 1e3) + " kN/m"
+            : Fmt.num(Math.hypot(q1[0], q1[1]) / 1e3) + " → " + Fmt.num(Math.hypot(q2[0], q2[1]) / 1e3) + " kN/m";
+        double mx = (x1 + x2) / 2, my = (y1 + y2) / 2, qm = Math.hypot(q1[0] + q2[0], q1[1] + q2[1]);
+        double ox = qm == 0 ? 0 : (q1[0] + q2[0]) / qm, oy = qm == 0 ? 1 : -(q1[1] + q2[1]) / qm;
+        label(g, text, mx - ox * 44, my - oy * 44);
+      }
     }
   }
 
@@ -565,13 +628,13 @@ final class StructureCanvas extends JPanel {
     g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[] {7, 4}, 0));
     for (ElementResult r : sol.elements) {
       Path2D p = new Path2D.Double();
-      int n = 30;
-      for (int i = 0; i <= n; i++) {
-        double x = r.L * i / n;
+      boolean first = true;
+      for (double x : r.samples(30)) {
         double[] d = r.displacement(x);
         double wx = r.element.a.x + r.c * x + k * d[0], wy = r.element.a.y + r.s * x + k * d[1];
-        if (i == 0) p.moveTo(sx(wx), sy(wy));
+        if (first) p.moveTo(sx(wx), sy(wy));
         else p.lineTo(sx(wx), sy(wy));
+        first = false;
       }
       g.draw(p);
     }
@@ -617,9 +680,8 @@ final class StructureCanvas extends JPanel {
       double nx = -r.s, ny = -r.c;
       Path2D p = new Path2D.Double();
       p.moveTo(sx(r.element.a.x), sy(r.element.a.y));
-      int n = 40;
-      for (int i = 0; i <= n; i++) {
-        double x = r.L * i / n, v = q.at(r, x) * px;
+      for (double x : r.samples(40)) {
+        double v = q.at(r, x) * px;
         p.lineTo(sx(r.element.a.x + r.c * x) + nx * v, sy(r.element.a.y + r.s * x) + ny * v);
       }
       p.lineTo(sx(r.element.b.x), sy(r.element.b.y));
@@ -640,8 +702,8 @@ final class StructureCanvas extends JPanel {
         tag(g, r, 0, v0, px, unit, max);
         tag(g, r, r.L, v1, px, unit, max);
       }
-      double peak = d == MainFrame.Diagram.M ? r.momentPeak() : -1;
-      if (peak > 0 && Math.abs(q.at(r, peak)) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) tag(g, r, peak, q.at(r, peak), px, unit, max);
+      double peak = d == MainFrame.Diagram.M ? r.maxMAt() : -1;
+      if (peak > 0 && peak < r.L && Math.abs(q.at(r, peak)) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) tag(g, r, peak, q.at(r, peak), px, unit, max);
     }
     g.setColor(color);
     g.setFont(g.getFont().deriveFont(Font.BOLD));

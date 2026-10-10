@@ -20,7 +20,11 @@ import rdm.model.Support;
  *
  * Degree of hyperstatism, as in schemes' hyperstatism.ts (unknowns − rank of the equilibrium equations): each
  * element carries 3 independent internal unknowns, less one per hinge; the supports' reactions balance their
- * own equations. Hence h = Σ(3 − hinges) − n_free + m, with n_free the unknown displacements and m the mobility.
+ * own equations, and each spring of an elastic support adds one unknown force. Hence
+ * h = Σ(3 − hinges) + springs − n_free + m, with n_free the unknown displacements and m the mobility.
+ *
+ * A blocked unknown may have an imposed value (a support that settles): it moves to the right-hand side,
+ * K_ff u_f = F_f − K_fp u_p, and the reactions are K u − F with it.
  */
 public final class Solver {
   private Solver() {}
@@ -48,7 +52,8 @@ public final class Solver {
       if (!e.hingeA) turns[a] = true;
       if (!e.hingeB) turns[b] = true;
       internal += 3 - (e.hingeA ? 1 : 0) - (e.hingeB ? 1 : 0);
-      sol.add(new ElementResult(e, a, b));
+      double weight = st.selfWeight ? e.material.rho() * e.section.area() * Structure.G : 0;
+      sol.add(new ElementResult(e, a, b, weight));
     }
 
     // support frames: columns t and n, u_global = R u_frame
@@ -96,6 +101,28 @@ public final class Solver {
       else if (nd.mz != 0) sol.warnings.add("nœud " + (i + 1) + " : moment ignoré, tous les éléments y sont articulés");
     }
 
+    // springs of the elastic supports, on the diagonal; each is one more unknown force for the hyperstatism
+    int springs = 0;
+    for (int i = 0; i < n; i++) {
+      Node nd = st.nodes.get(i);
+      if (!used[i] || nd.support != Support.ELASTIQUE) continue;
+      for (int k = 0; k < 3; k++) {
+        double kk = nd.spring(k);
+        if (kk < 0) {
+          sol.status = Solution.Status.ERROR;
+          sol.error = "nœud " + (i + 1) + " : raideur de ressort négative";
+          return sol;
+        }
+        if (kk == 0) continue;
+        if (k == 2 && !turns[i]) {
+          sol.warnings.add("nœud " + (i + 1) + " : ressort de rotation ignoré, tous les éléments y sont articulés");
+          continue;
+        }
+        K[3 * i + k][3 * i + k] += kk;
+        springs++;
+      }
+    }
+
     // the unknowns: used and not blocked by the support
     List<Integer> free = new ArrayList<>();
     boolean[] blocked = new boolean[N];
@@ -108,16 +135,30 @@ public final class Solver {
       for (int k = 0; k < 3; k++) if ((k < 2 || turns[i]) && !blocked[3 * i + k]) free.add(3 * i + k);
     }
 
+    // imposed displacements of the blocked unknowns (a support that settles): known, moved to the right-hand side
+    double[] U = new double[N];
+    for (int i = 0; i < n; i++) {
+      if (!used[i]) continue;
+      Node nd = st.nodes.get(i);
+      for (int k = 0; k < 3; k++) {
+        if (!blocked[3 * i + k] || nd.settle(k) == 0) continue;
+        if (k == 2 && !turns[i]) sol.warnings.add("nœud " + (i + 1) + " : rotation imposée ignorée, tous les éléments y sont articulés");
+        else U[3 * i + k] = nd.settle(k);
+      }
+    }
+
     int nf = free.size();
     double[][] Kff = new double[nf][nf];
     double[] Ff = new double[nf];
     for (int p = 0; p < nf; p++) {
-      Ff[p] = F[free.get(p)];
-      for (int q = 0; q < nf; q++) Kff[p][q] = K[free.get(p)][free.get(q)];
+      int dp = free.get(p);
+      Ff[p] = F[dp];
+      for (int d = 0; d < N; d++) if (U[d] != 0) Ff[p] -= K[dp][d] * U[d];
+      for (int q = 0; q < nf; q++) Kff[p][q] = K[dp][free.get(q)];
     }
     Cholesky ch = new Cholesky(Kff);
     sol.m = ch.nullity;
-    sol.h = internal - nf + sol.m;
+    sol.h = internal + springs - nf + sol.m;
     if (sol.m > 0) {
       String[] names = {"ux", "uy", "θz"};
       for (int p = 0; p < nf; p++) {
@@ -132,7 +173,6 @@ public final class Solver {
     }
 
     double[] uf = ch.solve(Ff);
-    double[] U = new double[N];
     for (int p = 0; p < nf; p++) U[free.get(p)] = uf[p];
 
     // displacements back on the global axes
@@ -142,7 +182,7 @@ public final class Solver {
       double ut = U[3 * i], un = U[3 * i + 1];
       sol.disp[i] = new double[] {R[0] * ut + R[2] * un, R[1] * ut + R[3] * un, used[i] && turns[i] ? U[3 * i + 2] : Double.NaN};
     }
-    // reactions: K u − F on the blocked unknowns, back on the global axes
+    // reactions: K u − F on the blocked unknowns, −k u for the springs, back on the global axes
     sol.reaction = new double[n][];
     for (int i = 0; i < n; i++) {
       Node nd = st.nodes.get(i);
@@ -150,6 +190,10 @@ public final class Solver {
       double[] rf = new double[3];
       for (int k = 0; k < 3; k++) {
         int d = 3 * i + k;
+        if (nd.support == Support.ELASTIQUE) {
+          if (k < 2 || turns[i]) rf[k] = -nd.spring(k) * U[d];
+          continue;
+        }
         if (!blocked[d] || (k == 2 && !turns[i])) continue;
         double v = -F[d];
         for (int j = 0; j < N; j++) v += K[d][j] * U[j];

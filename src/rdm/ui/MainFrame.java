@@ -313,7 +313,7 @@ public final class MainFrame extends JFrame {
       group.add(b);
       bar.add(b);
       toolButtons.put(t, b);
-      if (t == Tool.BAR || t == Tool.SLIDER || t == Tool.HINGE) bar.addSeparator();
+      if (t == Tool.BAR || t == Tool.SPRING || t == Tool.HINGE) bar.addSeparator();
     }
     return bar;
   }

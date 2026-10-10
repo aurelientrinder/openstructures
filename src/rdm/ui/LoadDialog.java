@@ -1,0 +1,142 @@
+package rdm.ui;
+
+import java.awt.Component;
+import java.awt.GridLayout;
+import javax.swing.JCheckBox;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+import rdm.model.Element;
+import rdm.model.ElementLoad;
+
+/**
+ * The dialogs that create or change a load on an element (Force, Couple and Charge répartie tools, and the
+ * properties panel). Positions are typed in metres from the element's origin (node a), values in kN, kN·m, kN/m.
+ */
+final class LoadDialog {
+  private LoadDialog() {}
+
+  /** Asks again for whichever kind of load this is; null when cancelled. */
+  static ElementLoad edit(Component parent, Element e, ElementLoad l) {
+    return switch (l) {
+      case ElementLoad.Force f -> force(parent, e, f);
+      case ElementLoad.Couple c -> couple(parent, e, c);
+      case ElementLoad.Distributed d -> distributed(parent, e, d);
+    };
+  }
+
+  static ElementLoad force(Component parent, Element e, ElementLoad.Force init) {
+    double L = e.length();
+    Form f = new Form("Force sur l'élément", "Repère local de l'élément (x de l'origine vers l'extrémité)", init.local());
+    f.field("Position depuis l'origine (m, longueur " + Fmt.num(L) + ")", init.t() * L);
+    f.field("Fx (kN)", init.fx() / 1e3);
+    f.field("Fy (kN)", init.fy() / 1e3);
+    while (true) {
+      double[] v = f.ask(parent);
+      if (v == null) return null;
+      if (v[0] <= 0 || v[0] >= L) {
+        f.complain(parent, "La force doit être à l'intérieur de l'élément (sur un nœud, mettez-la sur le nœud).");
+        continue;
+      }
+      return new ElementLoad.Force(v[0] / L, v[1] * 1e3, v[2] * 1e3, f.local());
+    }
+  }
+
+  static ElementLoad couple(Component parent, Element e, ElementLoad.Couple init) {
+    double L = e.length();
+    Form f = new Form("Couple sur l'élément", null, false);
+    f.field("Position depuis l'origine (m, longueur " + Fmt.num(L) + ")", init.t() * L);
+    f.field("C (kN·m, + trigonométrique)", init.c() / 1e3);
+    while (true) {
+      double[] v = f.ask(parent);
+      if (v == null) return null;
+      if (v[0] <= 0 || v[0] >= L) {
+        f.complain(parent, "Le couple doit être à l'intérieur de l'élément (sur un nœud, mettez-le sur le nœud).");
+        continue;
+      }
+      return new ElementLoad.Couple(v[0] / L, v[1] * 1e3);
+    }
+  }
+
+  static ElementLoad distributed(Component parent, Element e, ElementLoad.Distributed init) {
+    double L = e.length();
+    Form f = new Form("Charge répartie sur l'élément", "Repère local de l'élément (y perpendiculaire à l'élément)", init.local());
+    f.field("Début (m depuis l'origine)", init.t1() * L);
+    f.field("Fin (m, longueur " + Fmt.num(L) + ")", init.t2() * L);
+    f.field("qx au début (kN/m)", init.qx1() / 1e3);
+    f.field("qy au début (kN/m)", init.qy1() / 1e3);
+    f.field("qx à la fin (kN/m)", init.qx2() / 1e3);
+    f.field("qy à la fin (kN/m)", init.qy2() / 1e3);
+    while (true) {
+      double[] v = f.ask(parent);
+      if (v == null) return null;
+      if (v[0] < 0 || v[1] > L + 1e-9 || v[1] <= v[0]) {
+        f.complain(parent, "Il faut 0 ≤ début < fin ≤ " + Fmt.num(L) + " m.");
+        continue;
+      }
+      return new ElementLoad.Distributed(v[0] / L, Math.min(1, v[1] / L), v[2] * 1e3, v[3] * 1e3, v[4] * 1e3, v[5] * 1e3, f.local());
+    }
+  }
+
+  /** One line for the properties panel. */
+  static String describe(Element e, ElementLoad l) {
+    double L = e.length();
+    return switch (l) {
+      case ElementLoad.Force f -> "Force (" + Fmt.num(f.fx() / 1e3) + " ; " + Fmt.num(f.fy() / 1e3) + ") kN à " + Fmt.num(f.t() * L) + " m"
+          + (f.local() ? ", locale" : "");
+      case ElementLoad.Couple c -> "Couple " + Fmt.kNm(c.c()) + " à " + Fmt.num(c.t() * L) + " m";
+      case ElementLoad.Distributed d -> {
+        boolean uniform = d.qx1() == d.qx2() && d.qy1() == d.qy2();
+        String values = uniform ? "(" + Fmt.num(d.qx1() / 1e3) + " ; " + Fmt.num(d.qy1() / 1e3) + ")"
+            : "(" + Fmt.num(d.qx1() / 1e3) + " ; " + Fmt.num(d.qy1() / 1e3) + ") → (" + Fmt.num(d.qx2() / 1e3) + " ; " + Fmt.num(d.qy2() / 1e3) + ")";
+        String span = d.t1() == 0 && d.t2() == 1 ? "" : " de " + Fmt.num(d.t1() * L) + " à " + Fmt.num(d.t2() * L) + " m";
+        yield "Répartie " + values + " kN/m" + span + (d.local() ? ", locale" : "");
+      }
+    };
+  }
+
+  /** A column of number fields, and maybe the local-axes box. */
+  private static final class Form {
+    private final String title;
+    private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 4));
+    private final java.util.List<JTextField> fields = new java.util.ArrayList<>();
+    private final JCheckBox local;
+
+    Form(String title, String localLabel, boolean isLocal) {
+      this.title = title;
+      local = localLabel == null ? null : new JCheckBox(localLabel, isLocal);
+    }
+
+    void field(String label, double value) {
+      JTextField t = new JTextField(Fmt.num(value).replace('−', '-'), 8);
+      panel.add(new JLabel(label));
+      panel.add(t);
+      fields.add(t);
+    }
+
+    boolean local() {
+      return local != null && local.isSelected();
+    }
+
+    double[] ask(Component parent) {
+      JPanel all = new JPanel(new java.awt.BorderLayout(0, 8));
+      all.add(panel, java.awt.BorderLayout.CENTER);
+      if (local != null) all.add(local, java.awt.BorderLayout.SOUTH);
+      while (true) {
+        if (JOptionPane.showConfirmDialog(parent, all, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return null;
+        try {
+          double[] out = new double[fields.size()];
+          for (int i = 0; i < out.length; i++) out[i] = Fmt.parse(fields.get(i).getText());
+          return out;
+        } catch (NumberFormatException ex) {
+          complain(parent, "Nombre attendu.");
+        }
+      }
+    }
+
+    void complain(Component parent, String why) {
+      JOptionPane.showMessageDialog(parent, why, title, JOptionPane.WARNING_MESSAGE);
+    }
+  }
+}

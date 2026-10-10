@@ -5,34 +5,45 @@ package rdm.model;
  *
  * As in schemes' hyperstatism.ts, a liaison is described by what it transmits (its torseur transmissible):
  * the components it blocks. They are written in the node's support frame, t along the support, n across it
- * (n at {@code Node.supportAngle} from x), r the rotation about z. The angle only matters for the supports
- * that block one translation and leave the other free (appui simple, glissière).
+ * (n at {@code Node.supportAngle} from x), r the rotation about z. The frame turns with the angle for the supports
+ * that treat t and n differently (appui simple, glissière, appui élastique); the others use x and y.
+ *
+ * A blocked component may be given a value (an imposed displacement: a support that settles); an elastic
+ * support blocks nothing but holds the node with springs along t, n and about z.
  */
 public enum Support {
-  NONE("Aucun", false, false, false),
+  NONE("Aucun", false, false, false, false),
   /** Encastrement: X, Y and N (the moment) transmitted. */
-  ENCASTREMENT("Encastrement", true, true, true),
+  ENCASTREMENT("Encastrement", true, true, true, false),
   /** Pivot of axis z with the bâti (appui double, articulation): X and Y transmitted. */
-  PIVOT("Pivot (appui double)", true, true, false),
+  PIVOT("Pivot (appui double)", true, true, false, false),
   /** Appui simple (ponctuelle / rouleau) of normal n: the force along n only. */
-  APPUI_SIMPLE("Appui simple (rouleau)", false, true, false),
+  APPUI_SIMPLE("Appui simple (rouleau)", false, true, false, true),
   /** Glissière of direction t (encastrement glissant): the force along n and the moment. */
-  GLISSIERE("Glissière", false, true, true);
+  GLISSIERE("Glissière", false, true, true, true),
+  /** Appui élastique: springs along t, n and about z (Node.springT, springN, springR). */
+  ELASTIQUE("Appui élastique (ressorts)", false, false, false, true);
 
   public final String label;
   /** blocked in the support frame: translation along t, along n, rotation about z */
   public final boolean t, n, r;
+  private final boolean turns;
 
-  Support(String label, boolean t, boolean n, boolean r) {
+  Support(String label, boolean t, boolean n, boolean r, boolean turns) {
     this.label = label;
     this.t = t;
     this.n = n;
     this.r = r;
+    this.turns = turns;
   }
 
-  /** The support frame turns with the node's angle; the others block both translations and use x, y. */
+  /** The support frame turns with the node's angle; the others use x, y. */
   public boolean skewed() {
-    return t != n;
+    return turns;
+  }
+
+  public boolean blocks(int component) {
+    return component == 0 ? t : component == 1 ? n : r;
   }
 
   @Override
