@@ -23,6 +23,8 @@ final class Fr {
       "status.maxDisplacement", "déplacement max %s",
       "status.envelope", "enveloppe de %d combinaisons, déplacement max %s (%s)",
       "status.inCombination", " — dans la combinaison %s",
+      "status.buckling", " — flambement λc = %s",
+      "status.noBuckling", " — pas de flambement (rien de comprimé)",
       "view.case", "Cas %s (%s)",
       "view.combination", "Combinaison %s",
       "view.combinationNamed", "Combinaison %s = %s",
@@ -71,6 +73,8 @@ final class Fr {
       "csv.Tmax", "T max (kN)",
       "csv.Mmin", "Mf min (kN·m)",
       "csv.Mmax", "Mf max (kN·m)",
+      "csv.modeUx", "mode %d ux (λc = %s)",
+      "csv.modeUy", "mode %d uy",
 
       // ——— display bar ———
       "display.deformed", "Déformée",
@@ -84,6 +88,10 @@ final class Fr {
       "display.showTip", "Le cas de charge, la combinaison ou l'enveloppe qui est calculé et dessiné",
       "display.cases", "Cas…",
       "display.casesTip", "Modifier les cas de charge et leurs combinaisons (Ctrl+L)",
+      "display.buckling", "Flambement : ",
+      "display.bucklingTip", "Flambement linéaire (eulérien) de ce qui est affiché : le mode dessiné, les coefficients de charge critique λc dans l'onglet Résultats",
+      "buckling.none", "Aucun",
+      "buckling.mode", "Mode %d",
 
       // ——— files ———
       "file.filter", "Structures (*.rdm)",
@@ -227,6 +235,19 @@ final class Fr {
       "report.ends", "Torseur de cohésion aux extrémités (repère local, N > 0 en traction)",
       "report.maxima", "Maxima par élément",
       "report.maxDisplacement", "Déplacement maximal : %s",
+      "report.buckling", "Flambement linéaire (eulérien), chaque élément découpé en %d pour la rigidité géométrique",
+      "report.bucklingFactor", "λc = %s",
+      "report.bucklingNever", "rien de comprimé",
+      "report.bucklingIn", "La plus faible : %s, %s",
+      "report.bucklingNone", "Rien n'est comprimé : ces charges, si grandes soient-elles, ne font pas flamber la structure.",
+      "report.bucklingWhat", "Coefficients de charge critique λc : toutes les charges multipliées par λc (aux nœuds et le long des éléments) font flamber la structure, c'est la charge critique.",
+      "report.bucklingMode", "  Mode %d : λc = %s",
+      "report.bucklingSafe", "Coefficient de sécurité au flambement λc = %s > 1 : la structure ne flambe pas sous ces charges.",
+      "report.bucklingUnsafe", "Coefficient de sécurité au flambement λc = %s < 1 : la structure flambe sous ces charges.",
+      "report.bucklingAssumptions", "Hypothèses : élasticité linéaire jusqu'au flambement, dans le plan de la structure (flambement hors plan et déversement non vérifiés) ; λc un peu au-dessus de la valeur exacte (d'un millième pour un poteau).",
+      "report.bucklingLoads", "Charge critique, mode 1 : les charges aux nœuds × λc",
+      "report.bucklingMembers", "Éléments comprimés, mode 1 : Ncr = λc·|N|, longueur de flambement Lf = π√(EI/Ncr), élancement Lf/i",
+      "report.bucklingEuler", "(π²EI/L² : charge d'Euler de l'élément seul, articulé à ses deux bouts, kN)",
       "col.node", "Nœud",
       "col.element", "Élém",
       "col.support", "Appui",
@@ -241,6 +262,10 @@ final class Fr {
       "col.Tmax", "T max",
       "col.Mmin", "Mf min",
       "col.Mmax", "Mf max",
+      "col.Ncr", "Ncr (kN)",
+      "col.Lf", "Lf (m)",
+      "col.LfL", "Lf/L",
+      "col.Lfi", "Lf/i",
 
       // ——— properties panel ———
       "insp.structure", "Structure",
@@ -311,6 +336,18 @@ final class Fr {
       "insp.rangeT", "T min … max",
       "insp.rangeM", "Mf min … max",
       "insp.worstIn", "%s : %s, dans %s",
+      "insp.buckling", "Flambement (linéaire, eulérien)",
+      "insp.bucklingMode", "λc, mode %d",
+      "insp.safety", "Coefficient de sécurité",
+      "insp.bucklingIn", "De la combinaison %s, celle au λc le plus faible.",
+      "insp.bucklingHelp", "Les charges × λc font flamber la structure selon le mode dessiné. Le mode : Flambement, au-dessus du dessin.",
+      "insp.bucklingNone", "Rien n'est comprimé : ces charges ne font pas flamber la structure.",
+      "insp.bucklingElement", "Flambement, mode 1",
+      "insp.compression", "N, le plus comprimé",
+      "insp.Ncr", "Ncr = λc·|N|",
+      "insp.Lf", "Longueur de flambement Lf",
+      "insp.euler", "π²EI/L² (seul, articulé)",
+      "insp.bucklingElementHelp", "Lf = π√(EI/Ncr). π²EI/L² : charge d'Euler de l'élément seul, articulé à ses deux bouts.",
 
       // ——— load dialogs ———
       "load.force", "Force sur l'élément",
@@ -368,5 +405,11 @@ final class Fr {
       "canvas.selfWeight", "Poids propre inclus",
       "canvas.deformed", "Déformée × %s",
       "canvas.envelope", "%s, enveloppe : max %s, min %s",
-      "canvas.readEnvelope", "Élément %d, x = %s m : N de %s à %s, T de %s à %s, Mf de %s à %s");
+      "canvas.readEnvelope", "Élément %d, x = %s m : N de %s à %s, T de %s à %s, Mf de %s à %s",
+      "canvas.buckling", "Mode de flambement %d : λc = %s",
+      "canvas.bucklingIn", ", dans la combinaison %s",
+      "canvas.bucklingSafe", "Charge critique : les charges × λc — coefficient de sécurité %s",
+      "canvas.bucklingUnsafe", "Coefficient de sécurité %s < 1 : la structure flambe sous ces charges",
+      "canvas.noBuckling", "Flambement : rien n'est comprimé, ces charges ne le font pas flamber",
+      "canvas.modeShape", "Déformée de flambement (amplitude arbitraire)");
 }

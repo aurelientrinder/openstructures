@@ -2,12 +2,16 @@ package rdm.ui;
 
 import static rdm.i18n.Tr.tr;
 
+import java.util.ArrayList;
+import java.util.List;
 import rdm.i18n.Tr;
 import rdm.model.Combination;
 import rdm.model.Element;
 import rdm.model.Node;
+import rdm.model.NodeLoad;
 import rdm.model.Structure;
 import rdm.model.Support;
+import rdm.solver.Buckling;
 import rdm.solver.ElementResult;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
@@ -144,6 +148,80 @@ final class Report {
       b.append(row(Integer.toString(s.number(e)), k(m), "C" + (byM + 1), Fmt.num(sigma / 1e6), "C" + (byS + 1), e.section.label()));
     }
     b.append('\n').append(tr("report.envelopeDisplacement", Fmt.mm(env.maxDisplacement), "C" + (env.maxDisplacementBy + 1))).append('\n');
+    return b.toString();
+  }
+
+  /**
+   * Linear buckling, after the results it is of: the critical load factors of the modes, the safety factor, the
+   * critical load (the nodal loads × λcr), and each compressed element's critical load and buckling length. With
+   * the envelope, of the combination with the smallest λcr, after every combination's.
+   */
+  static String of(Structure s, Buckling bk, Combination by, Envelope env, double[] factors) {
+    StringBuilder b = new StringBuilder();
+    b.append(tr("report.buckling", bk.parts)).append('\n');
+    if (by != null) {
+      for (int k = 0; k < env.combinations.size(); k++) {
+        String f = Double.isNaN(factors[k]) ? tr("report.bucklingNever") : tr("report.bucklingFactor", Fmt.num(factors[k]));
+        b.append(String.format("  C%-3d %s", k + 1, f)).append('\n');
+      }
+      b.append(tr("report.bucklingIn", "C" + (env.combinations.indexOf(by) + 1), by.name)).append('\n');
+    }
+    if (!bk.ok()) return b.append(tr("report.bucklingNone")).append('\n').toString();
+    b.append(tr("report.bucklingWhat")).append('\n');
+    for (int k = 0; k < bk.modes.size(); k++) b.append(tr("report.bucklingMode", k + 1, Fmt.num(bk.modes.get(k).factor))).append('\n');
+    double f = bk.factor();
+    b.append(tr(f >= 1 ? "report.bucklingSafe" : "report.bucklingUnsafe", Fmt.num(f))).append('\n');
+    b.append(tr("report.bucklingAssumptions")).append('\n');
+
+    StringBuilder loads = new StringBuilder();
+    for (int i = 0; i < s.nodes.size(); i++) {
+      NodeLoad l = s.nodes.get(i).load(bk.solution.loading);
+      if (l.fx == 0 && l.fy == 0 && l.mz == 0) continue;
+      loads.append(row(Integer.toString(i + 1), k(l.fx * f), k(l.fy * f), k(l.mz * f)));
+    }
+    if (!loads.isEmpty()) {
+      b.append('\n').append(tr("report.bucklingLoads")).append('\n');
+      b.append(row(tr("col.node"), "Fx (kN)", "Fy (kN)", "Mz (kN·m)")).append(loads);
+    }
+
+    b.append('\n').append(tr("report.bucklingMembers")).append('\n');
+    b.append(row(tr("col.element"), "N (kN)", tr("col.Ncr"), tr("col.Lf"), tr("col.LfL"), tr("col.Lfi"), "π²EI/L²"));
+    for (Buckling.Member m : bk.members) {
+      if (!m.compressed()) continue;
+      b.append(row(Integer.toString(s.number(m.element())), k(m.N()), k(m.critical(f)), Fmt.num(m.length(f)), Fmt.num(m.length(f) / m.L()),
+          Fmt.num(m.slenderness(f)), k(m.euler())));
+    }
+    b.append(tr("report.bucklingEuler")).append('\n');
+    return b.toString();
+  }
+
+  /**
+   * The buckling modes as a table: for each element, points along it with each mode's displacement (the largest
+   * at 1), its λcr in the column's name.
+   */
+  static String csv(Buckling bk) {
+    boolean comma = Tr.lang().decimal == ',';
+    String sep = comma ? ";" : ",";
+    List<String> head = new ArrayList<>(List.of(tr("csv.element"), "x (m)", "X (m)", "Y (m)"));
+    for (int k = 0; k < bk.modes.size(); k++) {
+      head.add(tr("csv.modeUx", k + 1, plain(bk.modes.get(k).factor, comma)));
+      head.add(tr("csv.modeUy", k + 1));
+    }
+    StringBuilder b = new StringBuilder(String.join(sep, head)).append("\r\n");
+    for (ElementResult r : bk.solution.elements) {
+      String n = Integer.toString(bk.solution.structure.number(r.element));
+      int steps = 5 * bk.parts;
+      for (int i = 0; i <= steps; i++) {
+        double x = r.L * i / steps;
+        b.append(n).append(sep).append(plain(x, comma)).append(sep).append(plain(r.element.a.x + r.c * x, comma)).append(sep)
+            .append(plain(r.element.a.y + r.s * x, comma));
+        for (Buckling.Mode m : bk.modes) {
+          double[] d = m.displacement(r.element, x);
+          b.append(sep).append(plain(d[0], comma)).append(sep).append(plain(d[1], comma));
+        }
+        b.append("\r\n");
+      }
+    }
     return b.toString();
   }
 

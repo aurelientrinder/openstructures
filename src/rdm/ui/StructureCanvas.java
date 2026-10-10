@@ -35,6 +35,7 @@ import rdm.model.Node;
 import rdm.model.NodeLoad;
 import rdm.model.Structure;
 import rdm.model.Support;
+import rdm.solver.Buckling;
 import rdm.solver.ElementResult;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
@@ -50,6 +51,7 @@ final class StructureCanvas extends JPanel {
   private static final Color LOAD = new Color(0xc8, 0x3a, 0x1e);
   private static final Color REACTION = new Color(0x1d, 0x8a, 0x3c);
   private static final Color DEFORMED = new Color(0xd0, 0x21, 0x6b);
+  private static final Color BUCKLING = new Color(0xd9, 0x6c, 0x00);
   private static final Color GRID = new Color(0xd8, 0xdc, 0xe4);
   private static final double PICK = 9;
 
@@ -482,16 +484,21 @@ final class StructureCanvas extends JPanel {
     taken.clear();
     tags.clear();
     boolean envelope = app.envelopeShown();
+    // a buckling mode is drawn alone, instead of the deformed shape, the diagram and the reactions
+    Buckling buckling = sol.ok() ? app.buckling() : null;
     if (!exporting) paintGrid(g);
     paintTitle(g);
-    if (envelope && app.diagram != MainFrame.Diagram.NONE) paintEnvelope(g, app.envelope());
-    else if (sol.ok() && app.diagram != MainFrame.Diagram.NONE) paintDiagram(g, sol);
+    boolean diagram = buckling == null && app.diagram != MainFrame.Diagram.NONE, reactions = buckling == null && app.showReactions;
+    if (envelope && diagram) paintEnvelope(g, app.envelope());
+    else if (sol.ok() && diagram) paintDiagram(g, sol);
+    // under the elements: where the mode stays on an element, the element (and its selection) shows
+    if (buckling != null) paintMode(g, buckling);
     paintElements(g, s);
-    if (!envelope && sol.ok() && app.showDeformed) paintDeformed(g, sol);
+    if (buckling == null && !envelope && sol.ok() && app.showDeformed) paintDeformed(g, sol);
     paintSupportsAndHinges(g, s);
     if (app.loading() != null) paintLoads(g, s, app.loading());
-    if (envelope && app.showReactions) paintEnvelopeReactions(g, s, app.envelope());
-    else if (sol.ok() && app.showReactions) paintReactions(g, s, sol);
+    if (envelope && reactions) paintEnvelopeReactions(g, s, app.envelope());
+    else if (sol.ok() && reactions) paintReactions(g, s, sol);
     paintTags(g);
     paintNodes(g, s);
     if (chain != null && !exporting) {
@@ -789,6 +796,44 @@ final class StructureCanvas extends JPanel {
     }
     g.setFont(g.getFont().deriveFont(Font.BOLD));
     g.drawString(tr("canvas.deformed", Fmt.num(k)), 12, getHeight() - 12);
+    g.setFont(g.getFont().deriveFont(Font.PLAIN));
+  }
+
+  /**
+   * The buckling mode shown, its largest displacement a tenth of the structure's size (times the magnification),
+   * with its λcr and the safety factor; or why there is none.
+   */
+  private void paintMode(Graphics2D g, Buckling bk) {
+    g.setFont(g.getFont().deriveFont(Font.BOLD));
+    g.setColor(BUCKLING);
+    Buckling.Mode mode = app.mode();
+    if (mode == null) {
+      if (bk.status == Buckling.Status.NO_COMPRESSION) g.drawString(tr("canvas.noBuckling"), 12, 38);
+      g.setFont(g.getFont().deriveFont(Font.PLAIN));
+      return;
+    }
+    double[] b = app.structure().bounds();
+    double k = 0.1 * Math.max(Math.hypot(b[2] - b[0], b[3] - b[1]), 1) * app.amplify;
+    g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+    for (ElementResult r : bk.solution.elements) {
+      Path2D p = new Path2D.Double();
+      int steps = 6 * bk.parts;
+      for (int i = 0; i <= steps; i++) {
+        double x = r.L * i / steps;
+        double[] d = mode.displacement(r.element, x);
+        double wx = r.element.a.x + r.c * x + k * d[0], wy = r.element.a.y + r.s * x + k * d[1];
+        if (i == 0) p.moveTo(sx(wx), sy(wy));
+        else p.lineTo(sx(wx), sy(wy));
+      }
+      g.draw(p);
+    }
+    rdm.model.Combination by = app.bucklingCombination();
+    g.drawString(tr("canvas.buckling", bk.modes.indexOf(mode) + 1, Fmt.num(mode.factor)) + (by == null ? "" : tr("canvas.bucklingIn", by.name)), 12, 38);
+    double f = bk.factor();
+    g.setColor(f >= 1 ? Symbols.INK : LOAD);
+    g.drawString(tr(f >= 1 ? "canvas.bucklingSafe" : "canvas.bucklingUnsafe", Fmt.num(f)), 12, 56);
+    g.setColor(BUCKLING);
+    g.drawString(tr("canvas.modeShape"), 12, getHeight() - 12);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 

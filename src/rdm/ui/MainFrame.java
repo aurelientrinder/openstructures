@@ -50,6 +50,7 @@ import rdm.model.Examples;
 import rdm.model.LoadCase;
 import rdm.model.Loading;
 import rdm.model.Structure;
+import rdm.solver.Buckling;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
 import rdm.solver.Solver;
@@ -77,6 +78,11 @@ public final class MainFrame extends JFrame {
   private Solution solution = Solver.solve(structure, Loading.of(structure.cases.get(0)));
   /** the combinations solved, when the envelope is shown; null otherwise */
   private Envelope envelope;
+  /** the buckling of the solution shown (with the envelope, of the combination with the smallest λcr); null when off */
+  private Buckling buckling;
+  /** with the envelope, the index of that combination, and every combination's λcr (NaN: it can't buckle); −1, null otherwise */
+  private int bucklingBy = -1;
+  private double[] bucklingFactors;
   private Object selection;
   private Tool tool = Tool.SELECT;
   private final Deque<String> undo = new ArrayDeque<>(), redo = new ArrayDeque<>();
@@ -85,6 +91,8 @@ public final class MainFrame extends JFrame {
   // display options
   boolean showDeformed = true, showReactions = true, showNumbers = false;
   Diagram diagram = Diagram.M;
+  /** the buckling mode drawn, from 1; 0: no buckling */
+  int bucklingMode;
   double amplify = 1;
   double grid = 0.5;
 
@@ -155,6 +163,22 @@ public final class MainFrame extends JFrame {
   /** The envelope, when it is shown (null otherwise); see its ok(). */
   Envelope envelope() {
     return envelope;
+  }
+
+  /** The buckling of what is shown, when a mode is asked for (null otherwise); see its ok(). */
+  Buckling buckling() {
+    return buckling;
+  }
+
+  /** The combination the buckling is of, with the envelope (the one with the smallest λcr); null otherwise. */
+  Combination bucklingCombination() {
+    return bucklingBy < 0 || envelope == null ? null : envelope.combinations.get(bucklingBy);
+  }
+
+  /** The buckling mode drawn, among those found: the one asked for, or the last there is; null without one. */
+  Buckling.Mode mode() {
+    if (buckling == null || !buckling.ok()) return null;
+    return buckling.modes.get(Math.min(bucklingMode, buckling.modes.size()) - 1);
   }
 
   /** The envelope is shown and every combination was solved. */
@@ -322,19 +346,64 @@ public final class MainFrame extends JFrame {
       envelope = null;
       solution = Solver.solve(structure, loading());
     }
+    buckle();
     if (selection instanceof rdm.model.Node n && !structure.nodes.contains(n)) selection = null;
     if (selection instanceof rdm.model.Element e && !structure.elements.contains(e)) selection = null;
     fillShowBox();
     inspector.refresh();
     report.setText(reportText());
     report.setCaretPosition(0);
+    // with a buckling mode, the tab opens at the buckling, the linear results above it
+    int at = buckling == null ? -1 : report.getText().indexOf("\n\n" + tr("report.buckling", buckling.parts));
+    if (at >= 0) javax.swing.SwingUtilities.invokeLater(() -> {
+      try {
+        java.awt.Rectangle r = report.modelToView2D(at + 2).getBounds();
+        r.height = report.getVisibleRect().height;
+        report.scrollRectToVisible(r);
+      } catch (javax.swing.text.BadLocationException ignored) {
+        // the text changed again meanwhile
+      }
+    });
     status.setText(summary());
     canvas.repaint();
   }
 
-  /** The Results tab, for the view. */
+  /**
+   * The buckling of the view, when a mode is asked for: of the solution, or with the envelope, of each combination,
+   * keeping the one with the smallest λcr (a combination that can't buckle comes after those that can).
+   */
+  private void buckle() {
+    buckling = null;
+    bucklingBy = -1;
+    bucklingFactors = null;
+    if (bucklingMode == 0) return;
+    if (!envelopeShown()) {
+      buckling = Buckling.of(solution);
+      return;
+    }
+    bucklingFactors = new double[envelope.solutions.size()];
+    for (int k = 0; k < envelope.solutions.size(); k++) {
+      Buckling b = Buckling.of(envelope.solutions.get(k));
+      bucklingFactors[k] = b.factor();
+      if (buckling == null || (b.ok() && (!buckling.ok() || b.factor() < buckling.factor()))) {
+        buckling = b;
+        bucklingBy = k;
+      }
+    }
+  }
+
+  /** Shows a buckling mode (from 1), or none (0). Not a change of the structure: no undo. */
+  void showBuckling(int mode) {
+    if (mode == bucklingMode) return;
+    bucklingMode = mode;
+    changed();
+  }
+
+  /** The Results tab, for the view; with the buckling after the linear results when a mode is shown. */
   private String reportText() {
-    return envelopeShown() ? Report.of(structure, envelope) : Report.of(structure, solution, viewTitle(shown));
+    String text = envelopeShown() ? Report.of(structure, envelope) : Report.of(structure, solution, viewTitle(shown));
+    if (buckling != null && solution.ok()) text += "\n" + Report.of(structure, buckling, bucklingCombination(), envelope, bucklingFactors);
+    return text;
   }
 
   private String summary() {
@@ -348,6 +417,7 @@ public final class MainFrame extends JFrame {
           + (envelopeShown()
               ? tr("status.envelope", envelope.solutions.size(), Fmt.mm(envelope.maxDisplacement), envelope.combinations.get(envelope.maxDisplacementBy).name)
               : tr("status.maxDisplacement", Fmt.mm(s.maxDisplacement)))
+          + (buckling == null ? "" : buckling.ok() ? tr("status.buckling", Fmt.num(buckling.factor())) : tr("status.noBuckling"))
           + (s.warnings.isEmpty() ? "" : " — " + String.join(tr("list.separator"), s.warnings));
     };
   }
@@ -423,7 +493,7 @@ public final class MainFrame extends JFrame {
         JOptionPane.showMessageDialog(this, tr("export.notSolved"), tr("menu.export"), JOptionPane.WARNING_MESSAGE);
         return;
       }
-      String csv = envelopeShown() ? Report.csv(envelope) : Report.csv(solution);
+      String csv = buckling != null && buckling.ok() ? Report.csv(buckling) : envelopeShown() ? Report.csv(envelope) : Report.csv(solution);
       // with a byte order mark, so that a spreadsheet reads it as UTF-8 (kN·m)
       export("csv", tr("export.csvFilter"), p -> Files.writeString(p, "\uFEFF" + csv, StandardCharsets.UTF_8));
     }));
@@ -595,6 +665,15 @@ public final class MainFrame extends JFrame {
       canvas.repaint();
     });
     bar.add(diag);
+    bar.addSeparator();
+    bar.add(new JLabel(tr("display.buckling")));
+    JComboBox<String> modes = new JComboBox<>();
+    modes.addItem(tr("buckling.none"));
+    for (int k = 1; k <= Buckling.MODES; k++) modes.addItem(tr("buckling.mode", k));
+    modes.setToolTipText(tr("display.bucklingTip"));
+    modes.setMaximumSize(new Dimension(110, 26));
+    modes.addActionListener(e -> showBuckling(modes.getSelectedIndex()));
+    bar.add(modes);
     bar.addSeparator();
     JCheckBox reactions = new JCheckBox(tr("display.reactions"), showReactions);
     reactions.addActionListener(e -> {

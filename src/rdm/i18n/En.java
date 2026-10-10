@@ -23,6 +23,8 @@ final class En {
       "status.maxDisplacement", "max displacement %s",
       "status.envelope", "envelope of %d combinations, max displacement %s (%s)",
       "status.inCombination", " — in combination %s",
+      "status.buckling", " — buckling λcr = %s",
+      "status.noBuckling", " — no buckling (nothing compressed)",
       "view.case", "Case %s (%s)",
       "view.combination", "Combination %s",
       "view.combinationNamed", "Combination %s = %s",
@@ -71,6 +73,8 @@ final class En {
       "csv.Tmax", "V max (kN)",
       "csv.Mmin", "M min (kN·m)",
       "csv.Mmax", "M max (kN·m)",
+      "csv.modeUx", "mode %d ux (λcr = %s)",
+      "csv.modeUy", "mode %d uy",
 
       // ——— display bar ———
       "display.deformed", "Deformed shape",
@@ -84,6 +88,10 @@ final class En {
       "display.showTip", "The load case, combination or envelope that is solved and drawn",
       "display.cases", "Cases…",
       "display.casesTip", "Edit the load cases and their combinations (Ctrl+L)",
+      "display.buckling", "Buckling: ",
+      "display.bucklingTip", "Linear (Euler) buckling of what is shown: the mode drawn, the critical load factors λcr in the Results tab",
+      "buckling.none", "None",
+      "buckling.mode", "Mode %d",
 
       // ——— files ———
       "file.filter", "Structures (*.rdm)",
@@ -227,6 +235,19 @@ final class En {
       "report.ends", "Internal forces at the element ends (local axes, N > 0 in tension)",
       "report.maxima", "Maxima per element",
       "report.maxDisplacement", "Largest displacement: %s",
+      "report.buckling", "Linear buckling (Euler), each element cut into %d for the geometric stiffness",
+      "report.bucklingFactor", "λcr = %s",
+      "report.bucklingNever", "nothing compressed",
+      "report.bucklingIn", "The smallest: %s, %s",
+      "report.bucklingNone", "Nothing is compressed: these loads, however large, do not make the structure buckle.",
+      "report.bucklingWhat", "Critical load factors λcr: every load times λcr (on the nodes and along the elements) makes the structure buckle, the critical load.",
+      "report.bucklingMode", "  Mode %d: λcr = %s",
+      "report.bucklingSafe", "Safety factor against buckling λcr = %s > 1: the structure does not buckle under these loads.",
+      "report.bucklingUnsafe", "Safety factor against buckling λcr = %s < 1: the structure buckles under these loads.",
+      "report.bucklingAssumptions", "Assumptions: linear elasticity up to buckling, in the plane of the structure (out-of-plane and lateral-torsional buckling not checked); λcr slightly above the exact value (by a thousandth for a column).",
+      "report.bucklingLoads", "Critical load, mode 1: the nodal loads × λcr",
+      "report.bucklingMembers", "Compressed elements, mode 1: Ncr = λcr·|N|, buckling length Lcr = π√(EI/Ncr), slenderness Lcr/i",
+      "report.bucklingEuler", "(π²EI/L²: Euler's load of the element alone, hinged at both ends, kN)",
       "col.node", "Node",
       "col.element", "Elem",
       "col.support", "Support",
@@ -241,6 +262,10 @@ final class En {
       "col.Tmax", "V max",
       "col.Mmin", "M min",
       "col.Mmax", "M max",
+      "col.Ncr", "Ncr (kN)",
+      "col.Lf", "Lcr (m)",
+      "col.LfL", "Lcr/L",
+      "col.Lfi", "Lcr/i",
 
       // ——— properties panel ———
       "insp.structure", "Structure",
@@ -311,6 +336,18 @@ final class En {
       "insp.rangeT", "V min … max",
       "insp.rangeM", "M min … max",
       "insp.worstIn", "%s: %s, in %s",
+      "insp.buckling", "Buckling (linear, Euler)",
+      "insp.bucklingMode", "λcr, mode %d",
+      "insp.safety", "Safety factor",
+      "insp.bucklingIn", "Of combination %s, the one with the smallest λcr.",
+      "insp.bucklingHelp", "The loads × λcr make the structure buckle in the mode drawn. The mode: Buckling, above the drawing.",
+      "insp.bucklingNone", "Nothing is compressed: these loads do not make the structure buckle.",
+      "insp.bucklingElement", "Buckling, mode 1",
+      "insp.compression", "N, most compressed",
+      "insp.Ncr", "Ncr = λcr·|N|",
+      "insp.Lf", "Buckling length Lcr",
+      "insp.euler", "π²EI/L² (alone, hinged)",
+      "insp.bucklingElementHelp", "Lcr = π√(EI/Ncr). π²EI/L²: Euler's load of the element on its own, hinged at both ends.",
 
       // ——— load dialogs ———
       "load.force", "Force on the element",
@@ -368,5 +405,11 @@ final class En {
       "canvas.selfWeight", "Self-weight included",
       "canvas.deformed", "Deformed shape × %s",
       "canvas.envelope", "%s, envelope: max %s, min %s",
-      "canvas.readEnvelope", "Element %d, x = %s m: N from %s to %s, V from %s to %s, M from %s to %s");
+      "canvas.readEnvelope", "Element %d, x = %s m: N from %s to %s, V from %s to %s, M from %s to %s",
+      "canvas.buckling", "Buckling mode %d: λcr = %s",
+      "canvas.bucklingIn", ", in combination %s",
+      "canvas.bucklingSafe", "Critical load: the loads × λcr — safety factor %s",
+      "canvas.bucklingUnsafe", "Safety factor %s < 1: the structure buckles under these loads",
+      "canvas.noBuckling", "Buckling: nothing is compressed, these loads do not make it buckle",
+      "canvas.modeShape", "Buckling mode shape (amplitude arbitrary)");
 }
