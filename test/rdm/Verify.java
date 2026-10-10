@@ -15,12 +15,16 @@ import rdm.io.StructureFile;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 import rdm.model.Examples;
+import rdm.model.LoadCase;
+import rdm.model.Loading;
 import rdm.model.Material;
 import rdm.model.Node;
+import rdm.model.NodeLoad;
 import rdm.model.Section;
 import rdm.model.Structure;
 import rdm.model.Support;
 import rdm.solver.ElementResult;
+import rdm.solver.Envelope;
 import rdm.solver.Solution;
 import rdm.solver.Solver;
 
@@ -50,6 +54,9 @@ public final class Verify {
     settlement();
     spring();
     splitKeepsLoads();
+    combinations();
+    envelope();
+    loadCaseFiles();
     readVersion1();
     examples();
     roundTrip();
@@ -82,10 +89,20 @@ public final class Verify {
     return s.nodes.get(i);
   }
 
+  /** The structure's first load case, G, which every check puts its loads in unless it says otherwise. */
+  static LoadCase g(Structure s) {
+    return s.cases.get(0);
+  }
+
+  /** What case G does at node i, to change. */
+  static NodeLoad load(Structure s, int i) {
+    return s.nodes.get(i).loadIn(g(s));
+  }
+
   static void cantilever() {
     Structure s = beam(1);
     node(s, 0).support = Support.ENCASTREMENT;
-    node(s, 1).fy = -P;
+    load(s, 1).fy = -P;
     Solution sol = Solver.solve(s);
     double EI = EI(s);
     check("cantilever: deflection PL³/3EI", sol.disp[1][1], -P * L * L * L / (3 * EI));
@@ -99,7 +116,7 @@ public final class Verify {
     Structure s = beam(1);
     node(s, 0).support = Support.PIVOT;
     node(s, 1).support = Support.APPUI_SIMPLE;
-    uniform(s.elements.get(0), -Q);
+    uniform(s, s.elements.get(0), -Q);
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     double EI = EI(s);
@@ -115,7 +132,7 @@ public final class Verify {
   static void fixedFixed() {
     Structure s = beam(2);
     node(s, 0).support = node(s, 2).support = Support.ENCASTREMENT;
-    for (Element e : s.elements) uniform(e, -Q);
+    for (Element e : s.elements) uniform(s, e, -Q);
     Solution sol = Solver.solve(s);
     double EI = EI(s);
     check("fixed-fixed: deflection qL⁴/384EI", sol.disp[1][1], -Q * Math.pow(L, 4) / (384 * EI));
@@ -128,7 +145,7 @@ public final class Verify {
     Structure s = beam(1);
     node(s, 0).support = Support.ENCASTREMENT;
     node(s, 1).support = Support.APPUI_SIMPLE;
-    uniform(s.elements.get(0), -Q);
+    uniform(s, s.elements.get(0), -Q);
     Solution sol = Solver.solve(s);
     check("propped cantilever: roller reaction 3qL/8", sol.reaction[1][1], 3 * Q * L / 8);
     check("propped cantilever: fixed-end reaction 5qL/8", sol.reaction[0][1], 5 * Q * L / 8);
@@ -142,7 +159,7 @@ public final class Verify {
     Structure s = new Structure();
     Node l = s.addNode(-a, 0), top = s.addNode(0, b), r = s.addNode(a, 0);
     l.support = r.support = Support.PIVOT;
-    top.fy = -P;
+    top.loadIn(g(s)).fy = -P;
     s.addElement(l, top, true);
     s.addElement(top, r, true);
     Solution sol = Solver.solve(s);
@@ -163,7 +180,7 @@ public final class Verify {
     node(s, 0).support = Support.PIVOT;
     node(s, 2).support = Support.APPUI_SIMPLE;
     node(s, 2).supportAngle = 45;
-    node(s, 1).fy = -P;
+    load(s, 1).fy = -P;
     Solution sol = Solver.solve(s);
     check("skewed roller: Rx on the right P/2", sol.reaction[2][0], P / 2);
     check("skewed roller: Ry on the right P/2", sol.reaction[2][1], P / 2);
@@ -179,7 +196,7 @@ public final class Verify {
     Node a = s.addNode(0, 0), hinge = s.addNode(2, 0), load = s.addNode(3, 0), roller = s.addNode(4, 0);
     a.support = Support.ENCASTREMENT;
     roller.support = Support.APPUI_SIMPLE;
-    load.fy = -P;
+    load.loadIn(g(s)).fy = -P;
     s.addElement(a, hinge, false).hingeB = true;
     s.addElement(hinge, load, false);
     s.addElement(load, roller, false);
@@ -229,27 +246,28 @@ public final class Verify {
 
   static void roundTrip() {
     Structure s = Examples.ALL.get("threeHinged").get();
-    s.elements.get(0).loads.add(new ElementLoad.Force(0.25, 1e3, -2e3, true));
-    s.elements.get(0).loads.add(new ElementLoad.Couple(0.6, 3e3));
-    s.nodes.get(0).settleN = -0.002;
-    s.selfWeight = true;
+    s.elements.get(0).loads.add(new ElementLoad.Force(g(s), 0.25, 1e3, -2e3, true));
+    s.elements.get(0).loads.add(new ElementLoad.Couple(g(s), 0.6, 3e3));
+    s.nodes.get(0).loadIn(g(s)).settleN = -0.002;
+    g(s).selfWeight = true;
     String once = StructureFile.write(s);
     check("file: read back identical", StructureFile.write(StructureFile.read(once)).equals(once) ? 1 : 0, 1);
   }
 
-  /** Loads + reactions balance: forces and moment about the origin. */
+  /** Loads + reactions balance: forces and moment about the origin, for the loading the solution is for. */
   static void equilibrium(String name, Structure s, Solution sol) {
     double fx = 0, fy = 0, mz = 0;
     for (int i = 0; i < s.nodes.size(); i++) {
       Node n = s.nodes.get(i);
+      NodeLoad l = n.load(sol.loading);
       double[] r = sol.reaction[i];
-      double x = n.fx + (r == null ? 0 : r[0]), y = n.fy + (r == null ? 0 : r[1]);
+      double x = l.fx + (r == null ? 0 : r[0]), y = l.fy + (r == null ? 0 : r[1]);
       fx += x;
       fy += y;
-      mz += n.mz + (r == null ? 0 : r[2]) + n.x * y - n.y * x;
+      mz += l.mz + (r == null ? 0 : r[2]) + n.x * y - n.y * x;
     }
     for (Element e : s.elements) {
-      double[] t = totals(e, s.selfWeight);
+      double[] t = totals(e, sol.loading, sol.loading.selfWeight(s));
       fx += t[0];
       fy += t[1];
       mz += t[2];
@@ -258,13 +276,17 @@ public final class Verify {
     check(name + ": global equilibrium", (Math.abs(fx) + Math.abs(fy) + Math.abs(mz)) / scale, 0);
   }
 
-  /** Resultant (global) and moment about the origin of an element's loads, exact (Gauss rules of the right degree). */
-  static double[] totals(Element e, boolean selfWeight) {
+  /**
+   * Resultant (global) and moment about the origin of an element's loads, each times its case's factor, and of its
+   * weight times selfWeight; exact (Gauss rules of the right degree).
+   */
+  static double[] totals(Element e, Loading loading, double selfWeight) {
     double len = e.length(), fx = 0, fy = 0, mz = 0;
-    List<ElementLoad> loads = new ArrayList<>(e.loads);
-    if (selfWeight) {
-      double w = e.material.rho() * e.section.area() * Structure.G;
-      loads.add(ElementLoad.Distributed.uniform(0, -w));
+    List<ElementLoad> loads = new ArrayList<>();
+    for (ElementLoad l : e.loads) loads.add(l.scaled(loading.factor(l.loadCase())));
+    if (selfWeight != 0) {
+      double w = selfWeight * e.material.rho() * e.section.area() * Structure.G;
+      loads.add(ElementLoad.Distributed.uniform(null, 0, -w));
     }
     for (ElementLoad l : loads) {
       switch (l) {
@@ -293,8 +315,8 @@ public final class Verify {
     return new double[] {fx, fy, mz};
   }
 
-  static void uniform(Element e, double qy) {
-    e.loads.add(ElementLoad.Distributed.uniform(0, qy));
+  static void uniform(Structure s, Element e, double qy) {
+    e.loads.add(ElementLoad.Distributed.uniform(g(s), 0, qy));
   }
 
   /** Simply supported, P at a = L/4 (b = 3L/4). */
@@ -302,7 +324,7 @@ public final class Verify {
     Structure s = beam(1);
     node(s, 0).support = Support.PIVOT;
     node(s, 1).support = Support.APPUI_SIMPLE;
-    s.elements.get(0).loads.add(new ElementLoad.Force(0.25, 0, -P, false));
+    s.elements.get(0).loads.add(new ElementLoad.Force(g(s), 0.25, 0, -P, false));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     double a = L / 4, b = 3 * L / 4, EI = EI(s);
@@ -317,7 +339,7 @@ public final class Verify {
   static void cantileverMidLoad() {
     Structure s = beam(1);
     node(s, 0).support = Support.ENCASTREMENT;
-    s.elements.get(0).loads.add(new ElementLoad.Force(0.5, 0, -P, false));
+    s.elements.get(0).loads.add(new ElementLoad.Force(g(s), 0.5, 0, -P, false));
     Solution sol = Solver.solve(s);
     check("cantilever, load at mid-length: tip deflection 5PL³/48EI", sol.disp[1][1], -5 * P * L * L * L / (48 * EI(s)));
   }
@@ -327,7 +349,7 @@ public final class Verify {
     Structure s = beam(1);
     node(s, 0).support = Support.PIVOT;
     node(s, 1).support = Support.APPUI_SIMPLE;
-    s.elements.get(0).loads.add(new ElementLoad.Distributed(0, 1, 0, 0, 0, -Q, false));
+    s.elements.get(0).loads.add(new ElementLoad.Distributed(g(s), 0, 1, 0, 0, 0, -Q, false));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     check("triangular load: reaction qL/6", sol.reaction[0][1], Q * L / 6);
@@ -341,7 +363,7 @@ public final class Verify {
   static void fixedFixedPoint() {
     Structure s = beam(1);
     node(s, 0).support = node(s, 1).support = Support.ENCASTREMENT;
-    s.elements.get(0).loads.add(new ElementLoad.Force(0.5, 0, -P, false));
+    s.elements.get(0).loads.add(new ElementLoad.Force(g(s), 0.5, 0, -P, false));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     check("fixed-fixed, load at mid-span: M at the fixed ends −PL/8", r.M(0), -P * L / 8);
@@ -354,7 +376,7 @@ public final class Verify {
     Structure s = beam(1);
     node(s, 0).support = Support.PIVOT;
     node(s, 1).support = Support.APPUI_SIMPLE;
-    s.elements.get(0).loads.add(new ElementLoad.Couple(0.5, C));
+    s.elements.get(0).loads.add(new ElementLoad.Couple(g(s), 0.5, C));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     check("moment in the span: reactions ±C/L", sol.reaction[0][1], C / L);
@@ -368,7 +390,7 @@ public final class Verify {
     Structure s = beam(1);
     node(s, 0).support = Support.PIVOT;
     node(s, 1).support = Support.APPUI_SIMPLE;
-    s.elements.get(0).loads.add(new ElementLoad.Distributed(0, 0.5, 0, -Q, 0, -Q, false));
+    s.elements.get(0).loads.add(new ElementLoad.Distributed(g(s), 0, 0.5, 0, -Q, 0, -Q, false));
     Solution sol = Solver.solve(s);
     check("load on half the span: reaction 3qL/8", sol.reaction[0][1], 3 * Q * L / 8);
     check("load on half the span: reaction qL/8", sol.reaction[1][1], Q * L / 8);
@@ -382,7 +404,7 @@ public final class Verify {
     a.support = Support.PIVOT;
     b.support = Support.APPUI_SIMPLE;
     Element e = s.addElement(a, b, false);
-    e.loads.add(new ElementLoad.Distributed(0, 1, 0, -Q, 0, -Q, true));
+    e.loads.add(new ElementLoad.Distributed(g(s), 0, 1, 0, -Q, 0, -Q, true));
     Solution sol = Solver.solve(s);
     check("inclined beam, local load: max M qL²/8", sol.of(e).maxAbsM(), Q * L * L / 8);
     equilibrium("inclined beam, local load", s, sol);
@@ -390,7 +412,7 @@ public final class Verify {
 
   static void selfWeight() {
     Structure s = beam(1);
-    s.selfWeight = true;
+    g(s).selfWeight = true;
     node(s, 0).support = Support.ENCASTREMENT;
     Solution sol = Solver.solve(s);
     Element e = s.elements.get(0);
@@ -404,7 +426,7 @@ public final class Verify {
     double delta = 0.005;
     Structure s = beam(1);
     node(s, 0).support = node(s, 1).support = Support.ENCASTREMENT;
-    node(s, 1).settleN = -delta;
+    load(s, 1).settleN = -delta;
     Solution sol = Solver.solve(s);
     double EI = EI(s);
     check("settlement: imposed displacement", sol.disp[1][1], -delta);
@@ -420,7 +442,7 @@ public final class Verify {
     node(s, 0).support = Support.ENCASTREMENT;
     node(s, 1).support = Support.ELASTIQUE;
     node(s, 1).springN = k;
-    node(s, 1).fy = -P;
+    load(s, 1).fy = -P;
     Solution sol = Solver.solve(s);
     double kb = 3 * EI(s) / (L * L * L);
     check("spring support: deflection P/(k + 3EI/L³)", sol.disp[1][1], -P / (k + kb));
@@ -442,6 +464,162 @@ public final class Verify {
       check("cut at t = " + at + ": reaction unchanged", after.reaction[0][1], before.reaction[0][1]);
       check("cut at t = " + at + ": M unchanged at x = 5 m", after.of(second).M(5 - second.a.x), mid);
     }
+  }
+
+  /** The example with cases, with a few more kinds of load: a settlement, a nodal moment, a force along an element. */
+  static Structure withCases() {
+    Structure s = Examples.ALL.get("portalCases").get();
+    LoadCase q = s.cases.get(1), w = s.cases.get(2);
+    s.nodes.get(3).loadIn(q).settleN = -0.003;
+    s.nodes.get(1).loadIn(w).mz = 4e3;
+    s.nodes.get(2).loadIn(w).fx = 3e3;
+    s.elements.get(1).loads.add(new ElementLoad.Force(q, 0.3, 1e3, -6e3, false));
+    return s;
+  }
+
+  /** Generated combinations, and each one's results against its cases' results, factored and added up. */
+  static void combinations() {
+    Structure s = withCases();
+    LoadCase g = s.cases.get(0), q = s.cases.get(1), w = s.cases.get(2);
+    check("generated combinations: 4", s.combinations.size(), 4);
+    double[][] expected = {{1.35, 1.5, 1.05}, {1.35, 1.05, 1.5}, {1, 1.5, 0}, {1, 0, 1.5}};
+    for (int i = 0; i < 4; i++) {
+      var k = s.combinations.get(i);
+      check("combination " + (i + 1) + ": EN 1990 factors", Math.abs(k.factor(g) - expected[i][0]) + Math.abs(k.factor(q) - expected[i][1])
+          + Math.abs(k.factor(w) - expected[i][2]), 0);
+    }
+    check("combinations generated twice: nothing more", s.generateCombinations(), 0);
+    Structure onlyG = beam(1);
+    onlyG.generateCombinations();
+    check("no variable load: 1.35 G", onlyG.combinations.size() == 1 && onlyG.combinations.get(0).factor(g(onlyG)) == 1.35 ? 1 : 0, 1);
+
+    List<Solution> alone = s.cases.stream().map(c -> Solver.solve(s, Loading.of(c))).toList();
+    for (var k : s.combinations) {
+      Solution sol = Solver.solve(s, k.loading());
+      String name = "combination " + k.name;
+      check(name + ": solved", sol.ok() ? 1 : 0, 1);
+      equilibrium(name, s, sol);
+      double du = 0, dr = 0, de = 0, umax = 0, fmax = 0;
+      for (int i = 0; i < s.nodes.size(); i++) {
+        for (int j = 0; j < 3; j++) {
+          double sum = 0;
+          for (int c = 0; c < s.cases.size(); c++) sum += k.factor(s.cases.get(c)) * alone.get(c).disp[i][j];
+          du = Math.max(du, Math.abs(sol.disp[i][j] - sum));
+          umax = Math.max(umax, Math.abs(sum));
+          if (sol.reaction[i] == null) continue;
+          sum = 0;
+          for (int c = 0; c < s.cases.size(); c++) sum += k.factor(s.cases.get(c)) * alone.get(c).reaction[i][j];
+          dr = Math.max(dr, Math.abs(sol.reaction[i][j] - sum));
+          fmax = Math.max(fmax, Math.abs(sum));
+        }
+      }
+      for (Element e : s.elements) {
+        ElementResult r = sol.of(e);
+        for (double x : r.samples(50)) {
+          for (Envelope.Effort f : Envelope.Effort.values()) {
+            double sum = 0;
+            for (int c = 0; c < s.cases.size(); c++) sum += k.factor(s.cases.get(c)) * f.at(alone.get(c).of(e), x);
+            de = Math.max(de, Math.abs(f.at(r, x) - sum));
+          }
+        }
+      }
+      check(name + ": displacements = Σ factor × case", du / umax, 0);
+      check(name + ": reactions = Σ factor × case", dr / fmax, 0);
+      check(name + ": N, V, M along the elements = Σ factor × case", de / fmax, 0);
+    }
+  }
+
+  /** The envelope's extremes are the combinations' extremes, solved one by one. */
+  static void envelope() {
+    Structure s = withCases();
+    Envelope env = Envelope.of(s);
+    check("envelope: solved", env.ok() ? 1 : 0, 1);
+    List<Solution> each = s.combinations.stream().map(k -> Solver.solve(s, k.loading())).toList();
+    double gap = 0;
+    for (Element e : s.elements) {
+      Envelope.Along a = env.of(e);
+      for (Envelope.Effort f : Envelope.Effort.values()) {
+        double hi = Double.NEGATIVE_INFINITY, lo = Double.POSITIVE_INFINITY;
+        for (Solution sol : each) {
+          ElementResult r = sol.of(e);
+          List<Double> xs = new ArrayList<>(r.extremaM());
+          for (double x : r.samples(200)) xs.add(x);
+          for (double x : xs) {
+            hi = Math.max(hi, f.at(r, x));
+            lo = Math.min(lo, f.at(r, x));
+          }
+        }
+        String what = "envelope, element " + s.number(e) + ": " + f;
+        check(what + " max = the largest of the combinations", a.max(f)[a.highest(f)], hi);
+        check(what + " min = the smallest of the combinations", a.min(f)[a.lowest(f)], lo);
+        for (int i = 0; i < a.x.length; i++) {
+          double top = Double.NEGATIVE_INFINITY, bottom = Double.POSITIVE_INFINITY;
+          for (Solution sol : each) {
+            top = Math.max(top, f.at(sol.of(e), a.x[i]));
+            bottom = Math.min(bottom, f.at(sol.of(e), a.x[i]));
+          }
+          gap = Math.max(gap, Math.max(Math.abs(a.max(f)[i] - top), Math.abs(a.min(f)[i] - bottom)) / 1e3);
+        }
+      }
+    }
+    check("envelope: at each abscissa, the extremes of the combinations", gap, 0);
+    double rgap = 0;
+    for (int i = 0; i < s.nodes.size(); i++) {
+      if (env.maxReaction[i] == null) continue;
+      for (int j = 0; j < 3; j++) {
+        double hi = Double.NEGATIVE_INFINITY, lo = Double.POSITIVE_INFINITY;
+        for (Solution sol : each) {
+          hi = Math.max(hi, sol.reaction[i][j]);
+          lo = Math.min(lo, sol.reaction[i][j]);
+        }
+        rgap = Math.max(rgap, Math.abs(env.maxReaction[i][j] - hi) + Math.abs(env.minReaction[i][j] - lo));
+      }
+    }
+    check("envelope: extreme reactions of the supports", rgap / 1e3, 0);
+    double dmax = each.stream().mapToDouble(sol -> sol.maxDisplacement).max().orElse(-1);
+    check("envelope: largest displacement", env.maxDisplacement, dmax);
+    s.combinations.clear();
+    check("envelope without a combination: no result", Envelope.of(s).ok() ? 1 : 0, 0);
+  }
+
+  /** Cases and combinations in a file, by name; an older file in one case; a case removed with its loads. */
+  static void loadCaseFiles() {
+    Structure s = withCases();
+    s.combinations.get(1).name = "ELU vent dominant";
+    String once = StructureFile.write(s);
+    Structure back = StructureFile.read(once);
+    check("file version 4: read back identical", StructureFile.write(back).equals(once) ? 1 : 0, 1);
+    check("file version 4: 3 cases, 4 combinations", back.cases.size() * 10 + back.combinations.size(), 34);
+    check("file version 4: name with spaces", back.combinations.get(1).name.equals("ELU vent dominant") ? 1 : 0, 1);
+    check("file version 4: same reaction for a combination", Solver.solve(back, back.combinations.get(1).loading()).reaction[0][1],
+        Solver.solve(s, s.combinations.get(1).loading()).reaction[0][1]);
+
+    Structure v3 = StructureFile.read("RDM 3\nselfweight 1\nnode 0.0 0.0 ENCASTREMENT 90.0 0.0 0.0 0.0 0.0 0.002 0.0 0.0 0.0 0.0\n"
+        + "node 2.0 0.0 NONE 90.0 0.0 -1000.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\nelem 1 2 0 0 RECT 50.0 100.0 0.0 0.0 0 70000.0 2700.0\n"
+        + "force 1 0.5 0.0 -500.0 0\n");
+    LoadCase only = v3.cases.get(0);
+    check("file version 3: one case G, permanent", v3.cases.size() == 1 && only.name.equals("G") && only.type == LoadCase.Type.PERMANENT ? 1 : 0, 1);
+    check("file version 3: self-weight in G", only.selfWeight ? 1 : 0, 1);
+    check("file version 3: nodal load in G", v3.nodes.get(1).load(only).fy, -1000);
+    check("file version 3: settlement in G", v3.nodes.get(0).load(only).settleN, 0.002);
+    check("file version 3: force on the element in G", v3.elements.get(0).loadsIn(only).size(), 1);
+
+    LoadCase w = s.cases.get(2);
+    check("case removed", s.removeCase(w) ? 1 : 0, 1);
+    check("case removed: no load left in it", s.elements.stream().mapToLong(e -> e.loadsIn(w).size()).sum()
+        + s.nodes.stream().filter(n -> n.load(w).loaded()).count(), 0);
+    check("case removed: no factor left in the combinations", s.combinations.stream().mapToDouble(k -> Math.abs(k.factor(w))).sum(), 0);
+    check("case removed: the file reads back", StructureFile.read(StructureFile.write(s)).cases.size(), 2);
+    Structure one = beam(1);
+    check("the last case cannot be removed", one.removeCase(g(one)) ? 1 : 0, 0);
+
+    // cut through a load: each half keeps it in its case
+    Structure cut = withCases();
+    LoadCase q = cut.cases.get(1);
+    Solution before = Solver.solve(cut, Loading.of(q));
+    cut.split(cut.elements.get(1), 0.3);
+    check("cut at a force of case Q: it goes to the node, in Q", cut.nodes.get(4).load(q).fy, -6e3);
+    check("cut: reaction of case Q unchanged", Solver.solve(cut, Loading.of(q)).reaction[0][1], before.reaction[0][1]);
   }
 
   static void readVersion1() {
@@ -491,7 +669,7 @@ public final class Verify {
     for (Structure st : new Structure[] {a, c}) {
       Node n0 = st.addNode(0, 0), n1 = st.addNode(3, 0);
       n0.support = Support.ENCASTREMENT;
-      n1.fy = -P;
+      n1.loadIn(g(st)).fy = -P;
       st.addElement(n0, n1, false);
     }
     Section t = new Section(Section.Kind.T_SECTION, 100, 100, 8, 10, false);
@@ -563,6 +741,9 @@ public final class Verify {
       throw new RuntimeException(ex);
     }
     for (Support v : Support.values()) used.add("support." + v.name());
+    for (LoadCase.Type v : LoadCase.Type.values()) used.add("case.type." + v.name());
+    // chosen in the code by a condition, not written as tr("…")
+    used.addAll(List.of("insp.caseHelp", "insp.combinationHelp", "insp.envelopeHelp", "cases.colName", "cases.colType", "cases.colSelfWeight"));
     for (Section.Kind v : Section.Kind.values()) {
       used.add("section." + v.name());
       if (v != Section.Kind.IPE) used.add("section.label." + v.name());

@@ -7,10 +7,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import rdm.model.Combination;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
+import rdm.model.LoadCase;
 import rdm.model.Material;
 import rdm.model.Node;
+import rdm.model.NodeLoad;
 import rdm.model.Section;
 import rdm.model.Structure;
 import rdm.model.Support;
@@ -20,40 +23,54 @@ import rdm.model.Support;
  * parameters as in Section; positions along an element as fractions of its length):
  *
  * <pre>
- * RDM 3
- * selfweight 0|1
- * node x y SUPPORT angle fx fy mz settleT settleN settleR springT springN springR
+ * RDM 4
+ * case TYPE selfweight name                  (TYPE PERMANENT|VARIABLE, selfweight 0|1, the name to the end of the line)
+ * combination k1 … kn name                   (a factor per case, in their order; the name to the end of the line)
+ * node x y SUPPORT angle springT springN springR
  * elem a b hingeA hingeB KIND p1 p2 p3 p4 turned E rho      (a, b: node numbers from 1; turned 0|1)
- * force e t fx fy local                           (e: element number from 1; local 0|1)
- * couple e t c
- * dist e t1 t2 qx1 qy1 qx2 qy2 local
+ * load n fx fy mz settleT settleN settleR c       (n: node number from 1; c: case number from 1)
+ * force e t fx fy local c                         (e: element number from 1; local 0|1)
+ * couple e t C c
+ * dist e t1 t2 qx1 qy1 qx2 qy2 local c
  * </pre>
  *
- * Older files are read too: version 2 had no p4 nor turned; version 1 no load lines, elem ending with E qx qy,
- * node with its first 8 fields.
+ * Older files are read too, with every load in one case (G, permanent): version 3 had no cases nor combinations,
+ * a line "selfweight 0|1", the loads and imposed displacements on the node line (node x y SUPPORT angle fx fy mz
+ * settleT settleN settleR springT springN springR) and no case number on the element loads; version 2 had no p4
+ * nor turned; version 1 no load lines, elem ending with E qx qy, node with its first 8 fields.
  * Also the undo snapshots.
  */
 public final class StructureFile {
   private StructureFile() {}
 
   public static String write(Structure s) {
-    StringBuilder sb = new StringBuilder("RDM 3\n");
-    sb.append(line("selfweight", s.selfWeight ? 1 : 0));
-    for (Node n : s.nodes) {
-      sb.append(line("node", n.x, n.y, n.support.name(), n.supportAngle, n.fx, n.fy, n.mz, n.settleT, n.settleN, n.settleR, n.springT, n.springN,
-          n.springR));
+    StringBuilder sb = new StringBuilder("RDM 4\n");
+    for (LoadCase c : s.cases) sb.append(line("case", c.type.name(), c.selfWeight ? 1 : 0, c.name.strip()));
+    for (Combination k : s.combinations) {
+      Object[] values = new Object[s.cases.size() + 1];
+      for (int i = 0; i < s.cases.size(); i++) values[i] = k.factor(s.cases.get(i));
+      values[s.cases.size()] = k.name.strip();
+      sb.append(line("combination", values));
     }
+    for (Node n : s.nodes) sb.append(line("node", n.x, n.y, n.support.name(), n.supportAngle, n.springT, n.springN, n.springR));
     for (Element e : s.elements) {
       sb.append(line("elem", s.number(e.a), s.number(e.b), e.hingeA ? 1 : 0, e.hingeB ? 1 : 0, e.section.kind().name(),
           e.section.p1(), e.section.p2(), e.section.p3(), e.section.p4(), e.section.turned() ? 1 : 0, e.material.E(), e.material.rho()));
     }
+    for (Node n : s.nodes) {
+      for (LoadCase c : s.cases) {
+        NodeLoad l = n.load(c);
+        if (!l.isZero()) sb.append(line("load", s.number(n), l.fx, l.fy, l.mz, l.settleT, l.settleN, l.settleR, s.number(c)));
+      }
+    }
     for (Element e : s.elements) {
       int k = s.number(e);
       for (ElementLoad l : e.loads) {
+        int c = s.number(l.loadCase());
         sb.append(switch (l) {
-          case ElementLoad.Force f -> line("force", k, f.t(), f.fx(), f.fy(), f.local() ? 1 : 0);
-          case ElementLoad.Couple c -> line("couple", k, c.t(), c.c());
-          case ElementLoad.Distributed d -> line("dist", k, d.t1(), d.t2(), d.qx1(), d.qy1(), d.qx2(), d.qy2(), d.local() ? 1 : 0);
+          case ElementLoad.Force f -> line("force", k, f.t(), f.fx(), f.fy(), f.local() ? 1 : 0, c);
+          case ElementLoad.Couple cp -> line("couple", k, cp.t(), cp.c(), c);
+          case ElementLoad.Distributed d -> line("dist", k, d.t1(), d.t2(), d.qx1(), d.qy1(), d.qx2(), d.qy2(), d.local() ? 1 : 0, c);
         });
       }
     }
@@ -63,35 +80,57 @@ public final class StructureFile {
   private static String line(String head, Object... values) {
     StringBuilder sb = new StringBuilder(head);
     for (Object v : values) sb.append(' ').append(v instanceof Double d ? String.format(Locale.ROOT, "%s", d) : v);
-    return sb.append('\n').toString();
+    return sb.toString().stripTrailing() + '\n';
   }
 
   public static Structure read(String text) {
     Structure s = new Structure();
     String[] lines = text.split("\\R");
     if (lines.length == 0 || !lines[0].trim().startsWith("RDM")) throw new IllegalArgumentException(tr("file.notRdm"));
-    int version = lines[0].trim().equals("RDM 1") ? 1 : lines[0].trim().equals("RDM 2") ? 2 : 3;
+    String head = lines[0].trim();
+    int version = head.equals("RDM 1") ? 1 : head.equals("RDM 2") ? 2 : head.equals("RDM 3") ? 3 : 4;
+    // the structure's own case G holds everything until the file lists its cases
+    boolean ownCases = false;
     for (int k = 1; k < lines.length; k++) {
       String l = lines[k].trim();
       if (l.isEmpty() || l.startsWith("#")) continue;
       String[] w = l.split("\\s+");
       try {
         switch (w[0]) {
-          case "selfweight" -> s.selfWeight = w[1].equals("1");
+          case "case" -> {
+            if (!ownCases) s.cases.clear();
+            ownCases = true;
+            String[] p = l.split("\\s+", 4);
+            s.addCase(p.length > 3 ? p[3] : "", LoadCase.Type.valueOf(p[1])).selfWeight = p[2].equals("1");
+          }
+          case "combination" -> {
+            int n = s.cases.size();
+            String[] p = l.split("\\s+", n + 2);
+            Combination c = s.addCombination(p.length > n + 1 ? p[n + 1] : "");
+            for (int i = 0; i < n; i++) c.setFactor(s.cases.get(i), d(p[i + 1]));
+          }
+          case "selfweight" -> s.cases.get(0).selfWeight = w[1].equals("1");
           case "node" -> {
             Node n = s.addNode(d(w[1]), d(w[2]));
             n.support = Support.valueOf(w[3]);
             n.supportAngle = d(w[4]);
-            n.fx = d(w[5]);
-            n.fy = d(w[6]);
-            n.mz = d(w[7]);
-            if (w.length > 8) {
-              n.settleT = d(w[8]);
-              n.settleN = d(w[9]);
-              n.settleR = d(w[10]);
-              n.springT = d(w[11]);
-              n.springN = d(w[12]);
-              n.springR = d(w[13]);
+            if (version >= 4) {
+              n.springT = d(w[5]);
+              n.springN = d(w[6]);
+              n.springR = d(w[7]);
+            } else {
+              NodeLoad g = n.loadIn(s.cases.get(0));
+              g.fx = d(w[5]);
+              g.fy = d(w[6]);
+              g.mz = d(w[7]);
+              if (w.length > 8) {
+                g.settleT = d(w[8]);
+                g.settleN = d(w[9]);
+                g.settleR = d(w[10]);
+                n.springT = d(w[11]);
+                n.springN = d(w[12]);
+                n.springR = d(w[13]);
+              }
             }
           }
           case "elem" -> {
@@ -108,15 +147,25 @@ public final class StructureFile {
               Material m = Material.PRESETS.stream().filter(p -> p.E() == E).findFirst().orElse(null);
               e.material = m != null ? m : Material.of(E, Material.STEEL.rho());
               double qx = d(w[10]), qy = d(w[11]);
-              if (qx != 0 || qy != 0) e.loads.add(ElementLoad.Distributed.uniform(qx, qy));
+              if (qx != 0 || qy != 0) e.loads.add(ElementLoad.Distributed.uniform(s.cases.get(0), qx, qy));
             } else {
               e.material = Material.of(E, d(w[10 + shift]));
             }
             s.elements.add(e);
           }
-          case "force" -> element(s, w[1]).loads.add(new ElementLoad.Force(d(w[2]), d(w[3]), d(w[4]), w[5].equals("1")));
-          case "couple" -> element(s, w[1]).loads.add(new ElementLoad.Couple(d(w[2]), d(w[3])));
-          case "dist" -> element(s, w[1]).loads.add(new ElementLoad.Distributed(d(w[2]), d(w[3]), d(w[4]), d(w[5]), d(w[6]), d(w[7]), w[8].equals("1")));
+          case "load" -> {
+            NodeLoad g = s.nodes.get(Integer.parseInt(w[1]) - 1).loadIn(loadCase(s, w[8]));
+            g.fx = d(w[2]);
+            g.fy = d(w[3]);
+            g.mz = d(w[4]);
+            g.settleT = d(w[5]);
+            g.settleN = d(w[6]);
+            g.settleR = d(w[7]);
+          }
+          case "force" -> element(s, w[1]).loads.add(new ElementLoad.Force(loadCase(s, version, w, 6), d(w[2]), d(w[3]), d(w[4]), w[5].equals("1")));
+          case "couple" -> element(s, w[1]).loads.add(new ElementLoad.Couple(loadCase(s, version, w, 4), d(w[2]), d(w[3])));
+          case "dist" -> element(s, w[1]).loads.add(new ElementLoad.Distributed(loadCase(s, version, w, 9), d(w[2]), d(w[3]), d(w[4]), d(w[5]),
+              d(w[6]), d(w[7]), w[8].equals("1")));
           default -> throw new IllegalArgumentException(tr("file.unknownLine"));
         }
       } catch (RuntimeException ex) {
@@ -124,6 +173,15 @@ public final class StructureFile {
       }
     }
     return s;
+  }
+
+  /** The case of an element load: its number at w[at] from version 4, the first case before. */
+  private static LoadCase loadCase(Structure s, int version, String[] w, int at) {
+    return version >= 4 ? loadCase(s, w[at]) : s.cases.get(0);
+  }
+
+  private static LoadCase loadCase(Structure s, String number) {
+    return s.cases.get(Integer.parseInt(number) - 1);
   }
 
   private static Element element(Structure s, String number) {

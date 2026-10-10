@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.TreeSet;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
+import rdm.model.Loading;
 
 /**
  * One element in the solver, and its results: the torseur de cohésion and the deflection all along it.
@@ -60,8 +61,11 @@ public final class ElementResult {
   /** end forces the nodes apply on the element, local axes (N, N·m) */
   public final double[] f = new double[6];
 
-  /** @param selfWeight the element's weight per metre (N/m, downwards), 0 for none */
-  ElementResult(Element e, int a, int b, double selfWeight) {
+  /**
+   * @param selfWeight the element's weight per metre (N/m, downwards), already factored; 0 for none
+   * @param loading the factor of each load case: the element's loads are taken times their case's
+   */
+  ElementResult(Element e, int a, int b, double selfWeight, Loading loading) {
     element = e;
     this.a = a;
     this.b = b;
@@ -71,8 +75,11 @@ public final class ElementResult {
     s = dy / L;
     EA = e.material.pascals() * e.section.area();
     EI = e.material.pascals() * e.section.inertia();
-    for (ElementLoad l : e.loads) add(l);
-    if (selfWeight != 0) add(new ElementLoad.Distributed(0, 1, 0, -selfWeight, 0, -selfWeight, false));
+    for (ElementLoad l : e.loads) {
+      double k = loading.factor(l.loadCase());
+      if (k != 0) add(l.scaled(k));
+    }
+    if (selfWeight != 0) add(ElementLoad.Distributed.uniform(null, 0, -selfWeight));
 
     double ea = EA / L, ei = EI / L, ei2 = EI / (L * L), ei3 = EI / (L * L * L);
     double[][] K = {
@@ -313,6 +320,19 @@ public final class ElementResult {
 
   /** The abscissa of the largest |Mf|: at an end, either side of a jump, or where T = 0 (found by bisection). */
   public double maxMAt() {
+    double best = 0, at = 0;
+    for (double x : extremaM()) {
+      double m = Math.abs(M(x));
+      if (m > best) {
+        best = m;
+        at = x;
+      }
+    }
+    return at;
+  }
+
+  /** Where Mf may be largest or smallest: the ends, either side of every jump, and where T = 0. */
+  public List<Double> extremaM() {
     List<Double> cands = new ArrayList<>(List.of(0.0, L));
     double eps = 1e-9 * L;
     List<Double> edges = new ArrayList<>();
@@ -338,15 +358,7 @@ public final class ElementResult {
         prevT = t;
       }
     }
-    double best = 0, at = 0;
-    for (double x : cands) {
-      double m = Math.abs(M(x));
-      if (m > best) {
-        best = m;
-        at = x;
-      }
-    }
-    return at;
+    return cands;
   }
 
   private double root(double lo, double hi) {

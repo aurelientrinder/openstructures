@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver and the sections against closed-form results, and the texts (144 checks)
+verify.cmd       :: the solver and the sections against closed-form results, and the texts (212 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -67,10 +67,28 @@ javac -encoding UTF-8 -d out/test $(find src test -name '*.java') && java -cp ou
 
 The keys are the same in both languages. Right or middle drag pans, the wheel zooms. Hover the structure to read
 N, V, M and the displacement at that point in the status bar. Ctrl+Z / Ctrl+Y undo and redo. File › Examples has
-eight ready-made structures. An element's loads are listed in its properties, where they can be changed, removed
-or added. The structure's properties (nothing selected) switch the self-weight on: ρ·A·g per metre of each
-element, from its material. The Results tab lists every number (displacements, reactions, end forces, maxima,
-σ max).
+nine ready-made structures. An element's loads are listed in its properties, where they can be changed, removed
+or added. The structure's properties (nothing selected) switch the self-weight on in a load case: ρ·A·g per
+metre of each element, from its material. The Results tab lists every number (displacements, reactions, end
+forces, maxima, σ max).
+
+**Load cases and combinations.** Every load, imposed displacement and the self-weight belong to a load case
+(G, permanent, to begin with). *Show:*, above the drawing, picks what is drawn and solved: a case, a combination
+or the envelope of all the combinations. The load tools put their loads in the case shown, and ask for one when a
+combination or the envelope is shown; the properties change the loads of the case shown. *Cases…* (Edit › Load
+cases and combinations, Ctrl+L) adds, renames and removes cases (permanent or variable, with or without the
+self-weight) and combinations, with a factor per case, and adds the usual ones of EN 1990 (6.10): 1.35 G + 1.5 Q
+with each variable case leading in turn and the others at 1.05 (ψ0 = 0.7), and G + 1.5 Q. A combination draws its
+loads factored and is solved as one loading (the structure is linear: the same as the factored sum of its cases).
+The envelope solves every combination and draws the largest and the smallest N, V or M along each element
+(solid and dashed), the reactions' ranges, and in the properties and the Results tab the extremes with the
+combination they come from. The text and CSV exports follow what is shown. File › Examples › *Portal frame:
+load cases G, Q, W and their combinations* has the self-weight and a permanent load (G), an imposed load (Q) and
+wind (W).
+
+![The envelope of a portal frame's combinations: largest and smallest bending moment, reactions' ranges](docs/envelope.png)
+
+![Load cases and combinations: the cases, and a factor per case for each combination](docs/cases.png)
 
 In French the shear force and the bending moment are written T and Mf, as in French courses; in English V and M.
 
@@ -94,12 +112,15 @@ drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -j
 
 Units: lengths in m, forces in kN, section dimensions in mm (A/I/v typed in: cm), E in MPa, ρ in kg/m³,
 imposed displacements in mm and mrad, spring stiffnesses in kN/m and kN·m/rad.
-Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java`.
+Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java` (version 4 has the load cases
+and combinations; older files open with every load in case G).
 
 ## How it works
 
-- `rdm.model` — `Structure` (nodes, elements, self-weight), `Node` (support, nodal load, imposed displacement,
-  springs), `Element` (hinges, section, material, loads), `ElementLoad` (force, couple, linear distributed load,
+- `rdm.model` — `Structure` (nodes, elements, load cases, combinations, the EN 1990 ones generated), `LoadCase`
+  (permanent or variable, self-weight or not), `Combination` (a factor per case), `Loading` (the factors the
+  solver applies), `Node` (support, springs, a `NodeLoad` per case: forces and imposed displacement), `Element`
+  (hinges, section, material, loads), `ElementLoad` (force, couple, linear distributed load, each in a case,
   positions as fractions of the length), `Support`, `Section` (templates; the thin-walled ones computed from
   their rectangles), `Material`, `Examples`.
 - `rdm.solver` — displacement method (`Solver`): 3 unknowns per node (ux, uy, θz), Euler–Bernoulli elements
@@ -108,7 +129,9 @@ Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java`.
   torseur de cohésion and the deflection anywhere along an element, exactly (not interpolated): the loads'
   equivalent nodal forces come from the Hermite shape functions, N, T, Mf and the deflection from closed-form
   integrals of what lies before the cut. Imposed displacements go to the right-hand side; springs add to the
-  diagonal.
+  diagonal. A case or a combination is one `Loading`, solved once; `Envelope` solves every combination and keeps
+  the extreme N, V, M along each element (at sample points and each combination's moment extrema) and the
+  extreme reactions.
 - `rdm.i18n` — the texts: `En` and `Fr` map the same keys to each language, `Tr.tr(key, args…)` looks them up.
   To add a language, copy `Fr.java`, translate it and add it to `Tr.Lang`; `Verify` checks that every language
   has every key with the same arguments.
@@ -132,7 +155,7 @@ sections.
 ## Not yet
 
 Thermal loads, buckling, 3D, shear deformation (Timoshenko), catalogues other than IPE (HEA, HEB, UPN…), angles
-(their principal axes are inclined), load cases and combinations, printing.
+(their principal axes are inclined), serviceability and accidental combinations, printing.
 
 ## Contributing
 

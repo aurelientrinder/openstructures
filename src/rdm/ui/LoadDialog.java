@@ -15,6 +15,7 @@ import rdm.model.ElementLoad;
 /**
  * The dialogs that create or change a load on an element (Force, Moment and Distributed load tools, and the
  * properties panel). Positions are typed in metres from the element's origin (node a), values in kN, kN·m, kN/m.
+ * The load stays in the case of the one it starts from.
  */
 final class LoadDialog {
   private LoadDialog() {}
@@ -41,7 +42,7 @@ final class LoadDialog {
         f.complain(parent, tr("load.forceOutside"));
         continue;
       }
-      return new ElementLoad.Force(v[0] / L, v[1] * 1e3, v[2] * 1e3, f.local());
+      return new ElementLoad.Force(init.loadCase(), v[0] / L, v[1] * 1e3, v[2] * 1e3, f.local());
     }
   }
 
@@ -57,7 +58,7 @@ final class LoadDialog {
         f.complain(parent, tr("load.coupleOutside"));
         continue;
       }
-      return new ElementLoad.Couple(v[0] / L, v[1] * 1e3);
+      return new ElementLoad.Couple(init.loadCase(), v[0] / L, v[1] * 1e3);
     }
   }
 
@@ -77,7 +78,7 @@ final class LoadDialog {
         f.complain(parent, tr("load.range", Fmt.num(L)));
         continue;
       }
-      return new ElementLoad.Distributed(v[0] / L, Math.min(1, v[1] / L), v[2] * 1e3, v[3] * 1e3, v[4] * 1e3, v[5] * 1e3, f.local());
+      return new ElementLoad.Distributed(init.loadCase(), v[0] / L, Math.min(1, v[1] / L), v[2] * 1e3, v[3] * 1e3, v[4] * 1e3, v[5] * 1e3, f.local());
     }
   }
 
