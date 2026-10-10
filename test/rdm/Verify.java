@@ -245,6 +245,10 @@ public final class Verify {
     check("three-hinged arch: h = 0", arch.h, 0);
     Solution portal = Solver.solve(Examples.ALL.get("portal").get());
     check("fixed portal frame: h = 3", portal.h, 3);
+    Structure column = Examples.ALL.get("eulerColumn").get();
+    Element tube = column.elements.get(0);
+    near("Euler's column: λcr = π²EI/L² / 40 kN", Buckling.of(Solver.solve(column)).factor(),
+        Math.PI * Math.PI * tube.material.pascals() * tube.section.inertia() / (3 * 3) / 40e3, 1e-3);
   }
 
   static void roundTrip() {

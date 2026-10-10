@@ -198,6 +198,8 @@ final class En {
       "example.mixedLoads", "Beam: force, moment and triangular load",
       "example.springAndSettlement", "Continuous beam on a spring support, with a settlement",
       "example.portalCases", "Portal frame: load cases G, Q, W and their combinations",
+      "example.eulerColumn", "Buckling: Euler's column, pinned at both ends",
+      "example.bucklingPortal", "Buckling: portal frame and its braced twin",
       "case.type.PERMANENT", "permanent",
       "case.type.VARIABLE", "variable",
 

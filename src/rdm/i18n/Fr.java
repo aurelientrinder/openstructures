@@ -198,6 +198,8 @@ final class Fr {
       "example.mixedLoads", "Poutre : force, couple et charge triangulaire",
       "example.springAndSettlement", "Poutre continue sur appui élastique, avec tassement",
       "example.portalCases", "Portique : cas de charge G, Q, W et leurs combinaisons",
+      "example.eulerColumn", "Flambement : poteau d'Euler bi-articulé",
+      "example.bucklingPortal", "Flambement : portique et son jumeau contreventé",
       "case.type.PERMANENT", "permanent",
       "case.type.VARIABLE", "variable",
 
