@@ -136,7 +136,8 @@ Thermal loads, buckling, 3D, shear deformation (Timoshenko), catalogues other th
 
 ## Contributing
 
-Issues and pull requests are welcome, translations too (see `rdm.i18n` above). Every push and pull request runs `test/rdm/Verify.java` on Linux, Windows
+Issues and pull requests are welcome, translations too (see `rdm.i18n` above). [CONTRIBUTING.md](CONTRIBUTING.md)
+says how to build, run the checks and submit a change. Every push and pull request runs `test/rdm/Verify.java` on Linux, Windows
 and macOS (`.github/workflows/checks.yml`); a change to the solver should come with a check against a closed-form
 result. Pushing a tag `vX.Y.Z` builds the packages above and publishes the release (`.github/workflows/release.yml`).
 

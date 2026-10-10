@@ -1,0 +1,24 @@
+name: Feature request
+description: "Something the application should do: a load, a support, a section, a result, a language…"
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Check the README's "Not yet" list first; a request for one of those is still welcome, with your use case.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you would like to do
+      description: The structure or the situation, and what is missing or awkward today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How it could work
+      description: In the window (tool, properties, menu) and in the results. For a new calculation, the reference (formula, standard, course) it should agree with.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: A workaround, or another program that does it.

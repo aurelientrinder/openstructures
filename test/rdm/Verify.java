@@ -30,7 +30,7 @@ public final class Verify {
 
   public static void main(String[] args) {
     // first, as Settings.applyAtStartup does: the languages load before Tr (no cycle between the two)
-    check("langues chargées avant Tr", Tr.Lang.values().length, 2);
+    check("languages loaded before Tr", Tr.Lang.values().length, 2);
     cantilever();
     simplySupported();
     fixedFixed();
@@ -55,7 +55,7 @@ public final class Verify {
     roundTrip();
     sections();
     texts();
-    System.out.printf("%d vérifications, %d échec(s)%n", checks, failures);
+    System.out.printf("%d checks, %d failure(s)%n", checks, failures);
     if (failures > 0) System.exit(1);
   }
 
@@ -88,11 +88,11 @@ public final class Verify {
     node(s, 1).fy = -P;
     Solution sol = Solver.solve(s);
     double EI = EI(s);
-    check("console : flèche PL³/3EI", sol.disp[1][1], -P * L * L * L / (3 * EI));
-    check("console : rotation PL²/2EI", sol.disp[1][2], -P * L * L / (2 * EI));
-    check("console : moment d'encastrement", sol.reaction[0][2], P * L);
-    check("console : Mf(0) = −PL", sol.of(s.elements.get(0)).M(0), -P * L);
-    check("console : h = 0", sol.h, 0);
+    check("cantilever: deflection PL³/3EI", sol.disp[1][1], -P * L * L * L / (3 * EI));
+    check("cantilever: rotation PL²/2EI", sol.disp[1][2], -P * L * L / (2 * EI));
+    check("cantilever: fixed-end moment", sol.reaction[0][2], P * L);
+    check("cantilever: M(0) = −PL", sol.of(s.elements.get(0)).M(0), -P * L);
+    check("cantilever: h = 0", sol.h, 0);
   }
 
   static void simplySupported() {
@@ -103,13 +103,13 @@ public final class Verify {
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     double EI = EI(s);
-    check("deux appuis : flèche 5qL⁴/384EI (entre les nœuds)", r.deflection(L / 2), -5 * Q * Math.pow(L, 4) / (384 * EI));
-    check("deux appuis : Mf max qL²/8", r.maxAbsM(), Q * L * L / 8);
-    check("deux appuis : abscisse du max L/2", r.maxMAt(), L / 2);
-    check("deux appuis : réaction qL/2", sol.reaction[1][1], Q * L / 2);
-    check("deux appuis : T(0) = −qL/2", r.T(0), -Q * L / 2);
-    check("deux appuis : h = 0", sol.h, 0);
-    equilibrium("deux appuis", s, sol);
+    check("simply supported: deflection 5qL⁴/384EI (between the nodes)", r.deflection(L / 2), -5 * Q * Math.pow(L, 4) / (384 * EI));
+    check("simply supported: max M qL²/8", r.maxAbsM(), Q * L * L / 8);
+    check("simply supported: max at x = L/2", r.maxMAt(), L / 2);
+    check("simply supported: reaction qL/2", sol.reaction[1][1], Q * L / 2);
+    check("simply supported: V(0) = −qL/2", r.T(0), -Q * L / 2);
+    check("simply supported: h = 0", sol.h, 0);
+    equilibrium("simply supported", s, sol);
   }
 
   static void fixedFixed() {
@@ -118,10 +118,10 @@ public final class Verify {
     for (Element e : s.elements) uniform(e, -Q);
     Solution sol = Solver.solve(s);
     double EI = EI(s);
-    check("bi-encastrée : flèche qL⁴/384EI", sol.disp[1][1], -Q * Math.pow(L, 4) / (384 * EI));
-    check("bi-encastrée : Mf aux encastrements −qL²/12", sol.of(s.elements.get(0)).M(0), -Q * L * L / 12);
-    check("bi-encastrée : Mf au milieu qL²/24", sol.of(s.elements.get(0)).M(L / 2), Q * L * L / 24);
-    check("bi-encastrée : h = 3", sol.h, 3);
+    check("fixed-fixed: deflection qL⁴/384EI", sol.disp[1][1], -Q * Math.pow(L, 4) / (384 * EI));
+    check("fixed-fixed: M at the fixed ends −qL²/12", sol.of(s.elements.get(0)).M(0), -Q * L * L / 12);
+    check("fixed-fixed: M at mid-span qL²/24", sol.of(s.elements.get(0)).M(L / 2), Q * L * L / 24);
+    check("fixed-fixed: h = 3", sol.h, 3);
   }
 
   static void proppedCantilever() {
@@ -130,10 +130,10 @@ public final class Verify {
     node(s, 1).support = Support.APPUI_SIMPLE;
     uniform(s.elements.get(0), -Q);
     Solution sol = Solver.solve(s);
-    check("encastrée–appuyée : réaction de l'appui 3qL/8", sol.reaction[1][1], 3 * Q * L / 8);
-    check("encastrée–appuyée : réaction de l'encastrement 5qL/8", sol.reaction[0][1], 5 * Q * L / 8);
-    check("encastrée–appuyée : moment d'encastrement qL²/8", sol.reaction[0][2], Q * L * L / 8);
-    check("encastrée–appuyée : h = 1", sol.h, 1);
+    check("propped cantilever: roller reaction 3qL/8", sol.reaction[1][1], 3 * Q * L / 8);
+    check("propped cantilever: fixed-end reaction 5qL/8", sol.reaction[0][1], 5 * Q * L / 8);
+    check("propped cantilever: fixed-end moment qL²/8", sol.reaction[0][2], Q * L * L / 8);
+    check("propped cantilever: h = 1", sol.h, 1);
   }
 
   /** Two bars at α from the horizontal, pinned at their feet, a load P down at the apex. */
@@ -150,11 +150,11 @@ public final class Verify {
     double Nexp = -P / (2 * sin);
     Element e = s.elements.get(0);
     double EA = e.material.pascals() * e.section.area();
-    check("treillis 2 barres : N = −P/(2 sin α)", sol.of(e).N(0), Nexp);
+    check("two-bar truss: N = −P/(2 sin α)", sol.of(e).N(0), Nexp);
     // Castigliano: δ = Σ N² L / (EA P)
-    check("treillis 2 barres : flèche Σ N²L/(EA·P)", sol.disp[1][1], -2 * Nexp * Nexp * len / (EA * P));
-    check("treillis 2 barres : h = 0", sol.h, 0);
-    check("treillis 2 barres : pas de rotation propre au sommet", Double.isNaN(sol.disp[1][2]) ? 0 : 1, 0);
+    check("two-bar truss: deflection Σ N²L/(EA·P)", sol.disp[1][1], -2 * Nexp * Nexp * len / (EA * P));
+    check("two-bar truss: h = 0", sol.h, 0);
+    check("two-bar truss: no rotation of its own at the apex", Double.isNaN(sol.disp[1][2]) ? 0 : 1, 0);
   }
 
   /** Pivot at the left, roller of normal at 45° at the right, P down at mid-span. */
@@ -165,12 +165,12 @@ public final class Verify {
     node(s, 2).supportAngle = 45;
     node(s, 1).fy = -P;
     Solution sol = Solver.solve(s);
-    check("appui incliné : Rx à droite P/2", sol.reaction[2][0], P / 2);
-    check("appui incliné : Ry à droite P/2", sol.reaction[2][1], P / 2);
-    check("appui incliné : Rx à gauche −P/2", sol.reaction[0][0], -P / 2);
+    check("skewed roller: Rx on the right P/2", sol.reaction[2][0], P / 2);
+    check("skewed roller: Ry on the right P/2", sol.reaction[2][1], P / 2);
+    check("skewed roller: Rx on the left −P/2", sol.reaction[0][0], -P / 2);
     double[] u = sol.disp[2];
-    check("appui incliné : déplacement ⟂ à la normale", u[0] * Math.cos(Math.PI / 4) + u[1] * Math.sin(Math.PI / 4), 0);
-    equilibrium("appui incliné", s, sol);
+    check("skewed roller: displacement ⟂ to the normal", u[0] * Math.cos(Math.PI / 4) + u[1] * Math.sin(Math.PI / 4), 0);
+    equilibrium("skewed roller", s, sol);
   }
 
   /** Gerber beam: fixed at 0, hinge at 2, roller at 4, P at 3. */
@@ -184,18 +184,18 @@ public final class Verify {
     s.addElement(hinge, load, false);
     s.addElement(load, roller, false);
     Solution sol = Solver.solve(s);
-    check("Gerber : réaction de l'appui P/2", sol.reaction[3][1], P / 2);
-    check("Gerber : moment d'encastrement P/2 × 2", sol.reaction[0][2], P);
-    check("Gerber : Mf nul à la rotule", sol.of(s.elements.get(0)).M(2), 0);
-    check("Gerber : h = 0", sol.h, 0);
+    check("Gerber: roller reaction P/2", sol.reaction[3][1], P / 2);
+    check("Gerber: fixed-end moment P/2 × 2", sol.reaction[0][2], P);
+    check("Gerber: M zero at the hinge", sol.of(s.elements.get(0)).M(2), 0);
+    check("Gerber: h = 0", sol.h, 0);
   }
 
   static void mechanisms() {
     Structure s = beam(1);
     node(s, 0).support = node(s, 1).support = Support.APPUI_SIMPLE;
     Solution sol = Solver.solve(s);
-    check("deux rouleaux : mécanisme", sol.status == Solution.Status.MECHANISM ? 1 : 0, 1);
-    check("deux rouleaux : m = 1", sol.m, 1);
+    check("two rollers: mechanism", sol.status == Solution.Status.MECHANISM ? 1 : 0, 1);
+    check("two rollers: m = 1", sol.m, 1);
 
     Structure q = new Structure();
     Node a = q.addNode(0, 0), b = q.addNode(2, 0), c = q.addNode(2, 2), d = q.addNode(0, 2);
@@ -206,25 +206,25 @@ public final class Verify {
     q.addElement(c, d, true);
     q.addElement(d, a, true);
     Solution qs = Solver.solve(q);
-    check("carré sans diagonale : m = 1", qs.m, 1);
+    check("square without a diagonal: m = 1", qs.m, 1);
     q.addElement(a, c, true);
     Solution braced = Solver.solve(q);
-    check("carré contreventé : m = 0, h = 0", braced.m + 10 * braced.h, 0);
+    check("braced square: m = 0, h = 0", braced.m + 10 * braced.h, 0);
   }
 
   static void examples() {
     for (var ex : Examples.ALL.entrySet()) {
       Structure s = ex.getValue().get();
       Solution sol = Solver.solve(s);
-      check(ex.getKey() + " : résolu", sol.ok() ? 1 : 0, 1);
+      check(ex.getKey() + ": solved", sol.ok() ? 1 : 0, 1);
       if (sol.ok()) equilibrium(ex.getKey(), s, sol);
     }
     Solution warren = Solver.solve(Examples.ALL.get("warren").get());
-    check("Warren : h = 0", warren.h, 0);
+    check("Warren: h = 0", warren.h, 0);
     Solution arch = Solver.solve(Examples.ALL.get("threeHinged").get());
-    check("trois articulations : h = 0", arch.h, 0);
+    check("three-hinged arch: h = 0", arch.h, 0);
     Solution portal = Solver.solve(Examples.ALL.get("portal").get());
-    check("portique encastré : h = 3", portal.h, 3);
+    check("fixed portal frame: h = 3", portal.h, 3);
   }
 
   static void roundTrip() {
@@ -234,7 +234,7 @@ public final class Verify {
     s.nodes.get(0).settleN = -0.002;
     s.selfWeight = true;
     String once = StructureFile.write(s);
-    check("fichier : relu à l'identique", StructureFile.write(StructureFile.read(once)).equals(once) ? 1 : 0, 1);
+    check("file: read back identical", StructureFile.write(StructureFile.read(once)).equals(once) ? 1 : 0, 1);
   }
 
   /** Loads + reactions balance: forces and moment about the origin. */
@@ -255,7 +255,7 @@ public final class Verify {
       mz += t[2];
     }
     double scale = 1e3;
-    check(name + " : équilibre global", (Math.abs(fx) + Math.abs(fy) + Math.abs(mz)) / scale, 0);
+    check(name + ": global equilibrium", (Math.abs(fx) + Math.abs(fy) + Math.abs(mz)) / scale, 0);
   }
 
   /** Resultant (global) and moment about the origin of an element's loads, exact (Gauss rules of the right degree). */
@@ -306,12 +306,12 @@ public final class Verify {
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
     double a = L / 4, b = 3 * L / 4, EI = EI(s);
-    check("force en travée : réaction Pb/L", sol.reaction[0][1], P * b / L);
-    check("force en travée : Mf sous la charge Pab/L", r.M(a), P * a * b / L);
-    check("force en travée : Mf max sous la charge", r.maxMAt(), a);
-    check("force en travée : flèche sous la charge Pa²b²/3EIL", r.deflection(a), -P * a * a * b * b / (3 * EI * L));
-    check("force en travée : saut de T = P", r.T(a + 1e-9) - r.T(a - 1e-9), P);
-    equilibrium("force en travée", s, sol);
+    check("point load in the span: reaction Pb/L", sol.reaction[0][1], P * b / L);
+    check("point load in the span: M under the load Pab/L", r.M(a), P * a * b / L);
+    check("point load in the span: max M under the load", r.maxMAt(), a);
+    check("point load in the span: deflection under the load Pa²b²/3EIL", r.deflection(a), -P * a * a * b * b / (3 * EI * L));
+    check("point load in the span: jump of V = P", r.T(a + 1e-9) - r.T(a - 1e-9), P);
+    equilibrium("point load in the span", s, sol);
   }
 
   static void cantileverMidLoad() {
@@ -319,7 +319,7 @@ public final class Verify {
     node(s, 0).support = Support.ENCASTREMENT;
     s.elements.get(0).loads.add(new ElementLoad.Force(0.5, 0, -P, false));
     Solution sol = Solver.solve(s);
-    check("console, force à mi-longueur : flèche en bout 5PL³/48EI", sol.disp[1][1], -5 * P * L * L * L / (48 * EI(s)));
+    check("cantilever, load at mid-length: tip deflection 5PL³/48EI", sol.disp[1][1], -5 * P * L * L * L / (48 * EI(s)));
   }
 
   /** Simply supported, load growing from 0 at a to q at b. */
@@ -330,12 +330,12 @@ public final class Verify {
     s.elements.get(0).loads.add(new ElementLoad.Distributed(0, 1, 0, 0, 0, -Q, false));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
-    check("charge triangulaire : réaction qL/6", sol.reaction[0][1], Q * L / 6);
-    check("charge triangulaire : réaction qL/3", sol.reaction[1][1], Q * L / 3);
-    check("charge triangulaire : Mf max qL²/9√3", r.maxAbsM(), Q * L * L / (9 * Math.sqrt(3)));
-    check("charge triangulaire : à x = L/√3", r.maxMAt(), L / Math.sqrt(3));
-    check("charge triangulaire : flèche au milieu 5qL⁴/768EI", r.deflection(L / 2), -5 * Q * Math.pow(L, 4) / (768 * EI(s)));
-    equilibrium("charge triangulaire", s, sol);
+    check("triangular load: reaction qL/6", sol.reaction[0][1], Q * L / 6);
+    check("triangular load: reaction qL/3", sol.reaction[1][1], Q * L / 3);
+    check("triangular load: max M qL²/9√3", r.maxAbsM(), Q * L * L / (9 * Math.sqrt(3)));
+    check("triangular load: at x = L/√3", r.maxMAt(), L / Math.sqrt(3));
+    check("triangular load: deflection at mid-span 5qL⁴/768EI", r.deflection(L / 2), -5 * Q * Math.pow(L, 4) / (768 * EI(s)));
+    equilibrium("triangular load", s, sol);
   }
 
   static void fixedFixedPoint() {
@@ -344,9 +344,9 @@ public final class Verify {
     s.elements.get(0).loads.add(new ElementLoad.Force(0.5, 0, -P, false));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
-    check("bi-encastrée, force au milieu : Mf aux encastrements −PL/8", r.M(0), -P * L / 8);
-    check("bi-encastrée, force au milieu : Mf au milieu PL/8", r.M(L / 2), P * L / 8);
-    check("bi-encastrée, force au milieu : flèche PL³/192EI", r.deflection(L / 2), -P * L * L * L / (192 * EI(s)));
+    check("fixed-fixed, load at mid-span: M at the fixed ends −PL/8", r.M(0), -P * L / 8);
+    check("fixed-fixed, load at mid-span: M at mid-span PL/8", r.M(L / 2), P * L / 8);
+    check("fixed-fixed, load at mid-span: deflection PL³/192EI", r.deflection(L / 2), -P * L * L * L / (192 * EI(s)));
   }
 
   static void coupleInSpan() {
@@ -357,11 +357,11 @@ public final class Verify {
     s.elements.get(0).loads.add(new ElementLoad.Couple(0.5, C));
     Solution sol = Solver.solve(s);
     ElementResult r = sol.of(s.elements.get(0));
-    check("couple en travée : réactions ±C/L", sol.reaction[0][1], C / L);
-    check("couple en travée : Mf juste avant C/2", r.M(L / 2 - 1e-12), C / 2);
-    check("couple en travée : Mf juste après −C/2", r.M(L / 2 + 1e-12), -C / 2);
-    check("couple en travée : pas de flèche au milieu (antisymétrie)", r.deflection(L / 2), 0);
-    equilibrium("couple en travée", s, sol);
+    check("moment in the span: reactions ±C/L", sol.reaction[0][1], C / L);
+    check("moment in the span: M just before C/2", r.M(L / 2 - 1e-12), C / 2);
+    check("moment in the span: M just after −C/2", r.M(L / 2 + 1e-12), -C / 2);
+    check("moment in the span: no deflection at mid-span (antisymmetry)", r.deflection(L / 2), 0);
+    equilibrium("moment in the span", s, sol);
   }
 
   static void halfSpan() {
@@ -370,9 +370,9 @@ public final class Verify {
     node(s, 1).support = Support.APPUI_SIMPLE;
     s.elements.get(0).loads.add(new ElementLoad.Distributed(0, 0.5, 0, -Q, 0, -Q, false));
     Solution sol = Solver.solve(s);
-    check("charge sur une demi-travée : réaction 3qL/8", sol.reaction[0][1], 3 * Q * L / 8);
-    check("charge sur une demi-travée : réaction qL/8", sol.reaction[1][1], Q * L / 8);
-    equilibrium("charge sur une demi-travée", s, sol);
+    check("load on half the span: reaction 3qL/8", sol.reaction[0][1], 3 * Q * L / 8);
+    check("load on half the span: reaction qL/8", sol.reaction[1][1], Q * L / 8);
+    equilibrium("load on half the span", s, sol);
   }
 
   /** A beam at 30°, a uniform load across it (local axes): the moment is the straight beam's. */
@@ -384,8 +384,8 @@ public final class Verify {
     Element e = s.addElement(a, b, false);
     e.loads.add(new ElementLoad.Distributed(0, 1, 0, -Q, 0, -Q, true));
     Solution sol = Solver.solve(s);
-    check("poutre inclinée, charge locale : Mf max qL²/8", sol.of(e).maxAbsM(), Q * L * L / 8);
-    equilibrium("poutre inclinée, charge locale", s, sol);
+    check("inclined beam, local load: max M qL²/8", sol.of(e).maxAbsM(), Q * L * L / 8);
+    equilibrium("inclined beam, local load", s, sol);
   }
 
   static void selfWeight() {
@@ -395,8 +395,8 @@ public final class Verify {
     Solution sol = Solver.solve(s);
     Element e = s.elements.get(0);
     double w = e.material.rho() * e.section.area() * Structure.G;
-    check("poids propre, console : flèche wL⁴/8EI", sol.disp[1][1], -w * Math.pow(L, 4) / (8 * EI(s)));
-    check("poids propre, console : réaction = poids", sol.reaction[0][1], w * L);
+    check("self-weight, cantilever: deflection wL⁴/8EI", sol.disp[1][1], -w * Math.pow(L, 4) / (8 * EI(s)));
+    check("self-weight, cantilever: reaction = weight", sol.reaction[0][1], w * L);
   }
 
   /** Fixed-fixed beam whose right end settles by δ. */
@@ -407,10 +407,10 @@ public final class Verify {
     node(s, 1).settleN = -delta;
     Solution sol = Solver.solve(s);
     double EI = EI(s);
-    check("tassement : déplacement imposé", sol.disp[1][1], -delta);
-    check("tassement : réaction −12EIδ/L³", sol.reaction[1][1], -12 * EI * delta / (L * L * L));
-    check("tassement : Mf d'encastrement 6EIδ/L²", Math.abs(sol.of(s.elements.get(0)).M(0)), 6 * EI * delta / (L * L));
-    check("tassement : h = 3", sol.h, 3);
+    check("settlement: imposed displacement", sol.disp[1][1], -delta);
+    check("settlement: reaction −12EIδ/L³", sol.reaction[1][1], -12 * EI * delta / (L * L * L));
+    check("settlement: fixed-end M 6EIδ/L²", Math.abs(sol.of(s.elements.get(0)).M(0)), 6 * EI * delta / (L * L));
+    check("settlement: h = 3", sol.h, 3);
   }
 
   /** Cantilever whose tip rests on a spring: the tip load shares between both. */
@@ -423,10 +423,10 @@ public final class Verify {
     node(s, 1).fy = -P;
     Solution sol = Solver.solve(s);
     double kb = 3 * EI(s) / (L * L * L);
-    check("appui élastique : flèche P/(k + 3EI/L³)", sol.disp[1][1], -P / (k + kb));
-    check("appui élastique : effort du ressort", sol.reaction[1][1], P * k / (k + kb));
-    check("appui élastique : h = 1", sol.h, 1);
-    equilibrium("appui élastique", s, sol);
+    check("spring support: deflection P/(k + 3EI/L³)", sol.disp[1][1], -P / (k + kb));
+    check("spring support: spring force", sol.reaction[1][1], P * k / (k + kb));
+    check("spring support: h = 1", sol.h, 1);
+    equilibrium("spring support", s, sol);
   }
 
   /** Cutting an element through its loads changes nothing (a force right at the cut goes to the new node). */
@@ -439,8 +439,8 @@ public final class Verify {
       Solution after = Solver.solve(s);
       Element second = s.elements.get(1);
       String at = String.format(Locale.ROOT, "%.3f", t);
-      check("coupe à t = " + at + " : réaction inchangée", after.reaction[0][1], before.reaction[0][1]);
-      check("coupe à t = " + at + " : Mf inchangé à x = 5 m", after.of(second).M(5 - second.a.x), mid);
+      check("cut at t = " + at + ": reaction unchanged", after.reaction[0][1], before.reaction[0][1]);
+      check("cut at t = " + at + ": M unchanged at x = 5 m", after.of(second).M(5 - second.a.x), mid);
     }
   }
 
@@ -448,23 +448,23 @@ public final class Verify {
     Structure s = StructureFile.read("RDM 1\nnode 0.0 0.0 PIVOT 90.0 0.0 0.0 0.0\nnode 6.0 0.0 APPUI_SIMPLE 90.0 0.0 0.0 0.0\n"
         + "elem 1 2 0 0 IPE 200.0 0.0 0.0 210000.0 0.0 -5000.0\n");
     Solution sol = Solver.solve(s);
-    check("fichier version 1 : charge répartie relue", sol.reaction[0][1], 5000 * 6 / 2.0);
-    check("fichier version 1 : acier", s.elements.get(0).material.rho(), 7850);
+    check("file version 1: distributed load read", sol.reaction[0][1], 5000 * 6 / 2.0);
+    check("file version 1: steel", s.elements.get(0).material.rho(), 7850);
   }
 
   /** The templates' area, inertia and extreme fibre, against the textbook formulas (mm, then SI). */
   static void sections() {
     Section rect = new Section(Section.Kind.RECT, 50, 100, 0);
     section("rectangle 50 × 100", rect, 5000, 50 * Math.pow(100, 3) / 12, 50);
-    section("rectangle 50 × 100 tourné", rect.turned(true), 5000, 100 * Math.pow(50, 3) / 12, 25);
+    section("rectangle 50 × 100 turned", rect.turned(true), 5000, 100 * Math.pow(50, 3) / 12, 25);
 
-    section("tube rectangulaire 200 × 100 × 8", new Section(Section.Kind.BOX, 200, 100, 8, 0, false), 200 * 100 - 184 * 84,
+    section("rectangular hollow 200 × 100 × 8", new Section(Section.Kind.BOX, 200, 100, 8, 0, false), 200 * 100 - 184 * 84,
         (100 * Math.pow(200, 3) - 84 * Math.pow(184, 3)) / 12, 100);
 
     double h = 300, b = 150, tw = 7, tf = 11;
     Section i = new Section(Section.Kind.I_SECTION, h, b, tw, tf, false);
     section("I 300 × 150 × 7 × 11", i, b * h - (b - tw) * (h - 2 * tf), (b * Math.pow(h, 3) - (b - tw) * Math.pow(h - 2 * tf, 3)) / 12, h / 2);
-    section("I 300 × 150 × 7 × 11 tourné", i.turned(true), b * h - (b - tw) * (h - 2 * tf),
+    section("I 300 × 150 × 7 × 11 turned", i.turned(true), b * h - (b - tw) * (h - 2 * tf),
         2 * tf * Math.pow(b, 3) / 12 + (h - 2 * tf) * Math.pow(tw, 3) / 12, b / 2);
 
     // T: flange 100 × 10 on top, web 8 × 90 under it
@@ -479,12 +479,12 @@ public final class Verify {
     tf = 11.5;
     double aWeb = h * tw, aFl = (b - tw) * tf, zc = (aWeb * tw / 2 + 2 * aFl * (tw + (b - tw) / 2)) / (aWeb + 2 * aFl);
     double iU = h * Math.pow(tw, 3) / 12 + aWeb * Math.pow(tw / 2 - zc, 2) + 2 * (tf * Math.pow(b - tw, 3) / 12 + aFl * Math.pow(tw + (b - tw) / 2 - zc, 2));
-    section("U 200 × 75 tourné", new Section(Section.Kind.CHANNEL, h, b, tw, tf, true), aWeb + 2 * aFl, iU, Math.max(zc, b - zc));
+    section("U 200 × 75 turned", new Section(Section.Kind.CHANNEL, h, b, tw, tf, true), aWeb + 2 * aFl, iU, Math.max(zc, b - zc));
 
-    section("tube rond 60 × 4", Section.BAR_DEFAULT, Math.PI * (60 * 60 - 52 * 52) / 4, Math.PI * (Math.pow(60, 4) - Math.pow(52, 4)) / 64, 30);
-    check("tube 200 × 100 × 60 : invalide", new Section(Section.Kind.BOX, 200, 100, 60, 0, false).problem() != null ? 1 : 0, 1);
-    check("I à âme plus large que les ailes : invalide", new Section(Section.Kind.I_SECTION, 300, 100, 120, 10, false).problem() != null ? 1 : 0, 1);
-    check("rond : ne se tourne pas", new Section(Section.Kind.ROUND, 20, 0, 0).turned(true).turned() ? 1 : 0, 0);
+    section("round tube 60 × 4", Section.BAR_DEFAULT, Math.PI * (60 * 60 - 52 * 52) / 4, Math.PI * (Math.pow(60, 4) - Math.pow(52, 4)) / 64, 30);
+    check("hollow 200 × 100 × 60: invalid", new Section(Section.Kind.BOX, 200, 100, 60, 0, false).problem() != null ? 1 : 0, 1);
+    check("I with a web wider than its flanges: invalid", new Section(Section.Kind.I_SECTION, 300, 100, 120, 10, false).problem() != null ? 1 : 0, 1);
+    check("round: does not turn", new Section(Section.Kind.ROUND, 20, 0, 0).turned(true).turned() ? 1 : 0, 0);
 
     // the same A, I, v typed in: the same results
     Structure a = new Structure(), c = new Structure();
@@ -498,23 +498,23 @@ public final class Verify {
     a.elements.get(0).section = t;
     c.elements.get(0).section = new Section(Section.Kind.CUSTOM, t.area() * 1e4, t.inertia() * 1e8, t.fibre() * 1e2);
     Solution sa = Solver.solve(a), sc = Solver.solve(c);
-    check("T et ses A, I, v saisis : même flèche", sa.disp[1][1], sc.disp[1][1]);
-    check("T et ses A, I, v saisis : même σ max", sa.of(a.elements.get(0)).sigmaMax(), sc.of(c.elements.get(0)).sigmaMax());
+    check("T and its A, I, v typed in: same deflection", sa.disp[1][1], sc.disp[1][1]);
+    check("T and its A, I, v typed in: same σ max", sa.of(a.elements.get(0)).sigmaMax(), sc.of(c.elements.get(0)).sigmaMax());
 
     // kept in a file, turned or not; a version 2 file still reads
     a.elements.get(0).section = new Section(Section.Kind.CHANNEL, 200, 75, 8.5, 11.5, true);
     Section back = StructureFile.read(StructureFile.write(a)).elements.get(0).section;
-    check("U tourné relu du fichier", back.equals(a.elements.get(0).section) ? 1 : 0, 1);
+    check("turned U read back from the file", back.equals(a.elements.get(0).section) ? 1 : 0, 1);
     Structure v2 = StructureFile.read("RDM 2\nselfweight 0\nnode 0.0 0.0 ENCASTREMENT 90.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n"
         + "node 2.0 0.0 NONE 90.0 0.0 -1000.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\nelem 1 2 0 0 RECT 50.0 100.0 0.0 70000.0 2700.0\n");
-    check("fichier version 2 : section", v2.elements.get(0).section.inertia(), 50 * Math.pow(100, 3) / 12 * 1e-12);
-    check("fichier version 2 : matériau", v2.elements.get(0).material.rho(), 2700);
+    check("file version 2: section", v2.elements.get(0).section.inertia(), 50 * Math.pow(100, 3) / 12 * 1e-12);
+    check("file version 2: material", v2.elements.get(0).material.rho(), 2700);
   }
 
   private static void section(String name, Section s, double area, double inertia, double fibre) {
-    check(name + " : A", s.area(), area * 1e-6);
-    check(name + " : I", s.inertia(), inertia * 1e-12);
-    check(name + " : v", s.fibre(), fibre * 1e-3);
+    check(name + ": A", s.area(), area * 1e-6);
+    check(name + ": I", s.inertia(), inertia * 1e-12);
+    check(name + ": v", s.fibre(), fibre * 1e-3);
   }
 
   /**
@@ -528,17 +528,17 @@ public final class Verify {
       Set<String> missing = new TreeSet<>(en.keySet()), extra = new TreeSet<>(t.keySet());
       missing.removeAll(t.keySet());
       extra.removeAll(en.keySet());
-      check(l + " : textes manquants " + missing, missing.size(), 0);
-      check(l + " : textes en trop " + extra, extra.size(), 0);
+      check(l + ": missing texts " + missing, missing.size(), 0);
+      check(l + ": extra texts " + extra, extra.size(), 0);
       int wrong = 0;
       for (var e : t.entrySet()) {
         String ref = en.get(e.getKey());
         if (ref != null && !specifiers(ref).equals(specifiers(e.getValue()))) {
-          System.out.println("       arguments différents : " + l + " " + e.getKey());
+          System.out.println("       different arguments: " + l + " " + e.getKey());
           wrong++;
         }
       }
-      check(l + " : mêmes arguments qu'en anglais", wrong, 0);
+      check(l + ": same arguments as in English", wrong, 0);
     }
     Set<String> used = new TreeSet<>();
     try (var files = Files.walk(Path.of("src"))) {
@@ -550,7 +550,7 @@ public final class Verify {
     } catch (java.io.IOException ex) {
       throw new RuntimeException(ex);
     }
-    check("des textes sont demandés dans src", used.size() > 100 ? 1 : 0, 1);
+    check("texts are asked for in src", used.size() > 100 ? 1 : 0, 1);
     try {
       for (String c : new String[] {"rdm.ui.Tool", "rdm.ui.MainFrame$Diagram"}) {
         String prefix = c.endsWith("Tool") ? "tool." : "diagram.";
@@ -571,7 +571,7 @@ public final class Verify {
     used.add("material." + Material.of(1, 1).name());
     for (String name : Examples.ALL.keySet()) used.add("example." + name);
     used.removeAll(en.keySet());
-    check("textes demandés mais absents " + used, used.size(), 0);
+    check("texts asked for but missing " + used, used.size(), 0);
   }
 
   private static List<String> specifiers(String text) {
@@ -587,7 +587,7 @@ public final class Verify {
     boolean ok = Math.abs(got - expected) <= Math.max(tol, 1e-9 * Math.abs(got));
     if (!ok) {
       failures++;
-      System.out.printf("ÉCHEC  %s : obtenu %.12g, attendu %.12g%n", what, got, expected);
+      System.out.printf("FAIL   %s: got %.12g, expected %.12g%n", what, got, expected);
     } else {
       System.out.printf("ok     %s%n", what);
     }

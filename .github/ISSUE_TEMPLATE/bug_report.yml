@@ -1,0 +1,58 @@
+name: Bug report
+description: A wrong result, a crash, or something in the window that does not behave as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead. For a wrong result, the value you expected and where it comes from (formula, textbook, other software).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: The steps from opening the application. If a structure is involved, attach its `.rdm` file (zip it if GitHub refuses the extension) or name the example from File › Examples.
+      placeholder: |
+        1. File › Examples › …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots, error messages
+      description: A screenshot of the window, or the error text if Java printed one (run `java -jar rdm.jar` from a terminal to see it).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release (e.g. 0.1.0, or the file you downloaded), or the commit if you built it yourself.
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which file you run
+      options:
+        - Windows package (OpenStructures.exe)
+        - macOS package (OpenStructures.app)
+        - Linux package
+        - rdm.jar
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System and Java
+      description: The operating system, and for rdm.jar or a build from source the output of `java -version`.
+      placeholder: Windows 11, Java 21.0.4
+  - type: dropdown
+    id: language
+    attributes:
+      label: Interface language
+      options:
+        - English
+        - French
