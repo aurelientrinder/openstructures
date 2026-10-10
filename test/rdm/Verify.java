@@ -1,12 +1,21 @@
 package rdm;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import rdm.i18n.Tr;
 import rdm.io.StructureFile;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 import rdm.model.Examples;
+import rdm.model.Material;
 import rdm.model.Node;
 import rdm.model.Section;
 import rdm.model.Structure;
@@ -20,6 +29,8 @@ public final class Verify {
   private static int failures, checks;
 
   public static void main(String[] args) {
+    // first, as Settings.applyAtStartup does: the languages load before Tr (no cycle between the two)
+    check("langues chargées avant Tr", Tr.Lang.values().length, 2);
     cantilever();
     simplySupported();
     fixedFixed();
@@ -42,6 +53,7 @@ public final class Verify {
     readVersion1();
     examples();
     roundTrip();
+    texts();
     System.out.printf("%d vérifications, %d échec(s)%n", checks, failures);
     if (failures > 0) System.exit(1);
   }
@@ -206,16 +218,16 @@ public final class Verify {
       check(ex.getKey() + " : résolu", sol.ok() ? 1 : 0, 1);
       if (sol.ok()) equilibrium(ex.getKey(), s, sol);
     }
-    Solution warren = Solver.solve(Examples.ALL.get("Treillis Warren").get());
+    Solution warren = Solver.solve(Examples.ALL.get("warren").get());
     check("Warren : h = 0", warren.h, 0);
-    Solution arch = Solver.solve(Examples.ALL.get("Portique à trois articulations").get());
+    Solution arch = Solver.solve(Examples.ALL.get("threeHinged").get());
     check("trois articulations : h = 0", arch.h, 0);
-    Solution portal = Solver.solve(Examples.ALL.get("Portique encastré").get());
+    Solution portal = Solver.solve(Examples.ALL.get("portal").get());
     check("portique encastré : h = 3", portal.h, 3);
   }
 
   static void roundTrip() {
-    Structure s = Examples.ALL.get("Portique à trois articulations").get();
+    Structure s = Examples.ALL.get("threeHinged").get();
     s.elements.get(0).loads.add(new ElementLoad.Force(0.25, 1e3, -2e3, true));
     s.elements.get(0).loads.add(new ElementLoad.Couple(0.6, 3e3));
     s.nodes.get(0).settleN = -0.002;
@@ -419,7 +431,7 @@ public final class Verify {
   /** Cutting an element through its loads changes nothing (a force right at the cut goes to the new node). */
   static void splitKeepsLoads() {
     for (double t : new double[] {0.4, 0.5, 1.0 / 3, 0.75}) {
-      Structure s = Examples.ALL.get("Poutre : force, couple et charge triangulaire").get();
+      Structure s = Examples.ALL.get("mixedLoads").get();
       Solution before = Solver.solve(s);
       double mid = before.of(s.elements.get(0)).M(5);
       s.split(s.elements.get(0), t);
@@ -437,6 +449,70 @@ public final class Verify {
     Solution sol = Solver.solve(s);
     check("fichier version 1 : charge répartie relue", sol.reaction[0][1], 5000 * 6 / 2.0);
     check("fichier version 1 : acier", s.elements.get(0).material.rho(), 7850);
+  }
+
+  /**
+   * Every language has the same texts, with the same arguments; every key the code asks for exists, including
+   * the ones it builds from enum names ("tool." + name()…).
+   */
+  static void texts() {
+    Map<String, String> en = Tr.Lang.EN.table();
+    for (Tr.Lang l : Tr.Lang.values()) {
+      Map<String, String> t = l.table();
+      Set<String> missing = new TreeSet<>(en.keySet()), extra = new TreeSet<>(t.keySet());
+      missing.removeAll(t.keySet());
+      extra.removeAll(en.keySet());
+      check(l + " : textes manquants " + missing, missing.size(), 0);
+      check(l + " : textes en trop " + extra, extra.size(), 0);
+      int wrong = 0;
+      for (var e : t.entrySet()) {
+        String ref = en.get(e.getKey());
+        if (ref != null && !specifiers(ref).equals(specifiers(e.getValue()))) {
+          System.out.println("       arguments différents : " + l + " " + e.getKey());
+          wrong++;
+        }
+      }
+      check(l + " : mêmes arguments qu'en anglais", wrong, 0);
+    }
+    Set<String> used = new TreeSet<>();
+    try (var files = Files.walk(Path.of("src"))) {
+      for (Path f : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+        Matcher m = Pattern.compile("\\btr\\(\"([\\w.]+)\"").matcher(Files.readString(f));
+        // "tool." + name(): the prefixes are checked below, with each name
+        while (m.find()) if (!m.group(1).endsWith(".")) used.add(m.group(1));
+      }
+    } catch (java.io.IOException ex) {
+      throw new RuntimeException(ex);
+    }
+    check("des textes sont demandés dans src", used.size() > 100 ? 1 : 0, 1);
+    try {
+      for (String c : new String[] {"rdm.ui.Tool", "rdm.ui.MainFrame$Diagram"}) {
+        String prefix = c.endsWith("Tool") ? "tool." : "diagram.";
+        for (Object v : Class.forName(c).getEnumConstants()) {
+          used.add(prefix + ((Enum<?>) v).name());
+          if (prefix.equals("tool.")) used.add(prefix + ((Enum<?>) v).name() + ".help");
+        }
+      }
+    } catch (ClassNotFoundException ex) {
+      throw new RuntimeException(ex);
+    }
+    for (Support v : Support.values()) used.add("support." + v.name());
+    for (Section.Kind v : Section.Kind.values()) {
+      used.add("section." + v.name());
+      if (v != Section.Kind.IPE) used.add("section.label." + v.name());
+    }
+    for (Material m : Material.PRESETS) used.add("material." + m.name());
+    used.add("material." + Material.of(1, 1).name());
+    for (String name : Examples.ALL.keySet()) used.add("example." + name);
+    used.removeAll(en.keySet());
+    check("textes demandés mais absents " + used, used.size(), 0);
+  }
+
+  private static List<String> specifiers(String text) {
+    List<String> out = new ArrayList<>();
+    Matcher m = Pattern.compile("%[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z%]").matcher(text);
+    while (m.find()) out.add(m.group());
+    return out;
   }
 
   static void check(String what, double got, double expected) {

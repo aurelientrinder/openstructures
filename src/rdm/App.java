@@ -1,5 +1,7 @@
 package rdm;
 
+import static rdm.i18n.Tr.tr;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import javax.swing.JOptionPane;
@@ -40,7 +42,7 @@ public final class App {
         frame.load(StructureFile.load(p), p);
       }
     } catch (Exception ex) {
-      JOptionPane.showMessageDialog(frame, "Impossible d'ouvrir " + args[args.length - 1] + " :\n" + ex.getMessage(), "Ouvrir", JOptionPane.ERROR_MESSAGE);
+      JOptionPane.showMessageDialog(frame, tr("file.openFailed", args[args.length - 1], ex.getMessage()), tr("file.open"), JOptionPane.ERROR_MESSAGE);
     }
   }
 }

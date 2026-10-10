@@ -1,6 +1,8 @@
 package rdm.model;
 
-import java.util.Locale;
+import static rdm.i18n.Tr.tr;
+
+import rdm.i18n.Tr;
 
 /**
  * A constant cross-section, bending about z (the plane of the structure is x, y). Parameters by kind:
@@ -9,17 +11,11 @@ import java.util.Locale;
  */
 public record Section(Kind kind, double p1, double p2, double p3) {
   public enum Kind {
-    RECT("Rectangle"), ROUND("Rond plein"), TUBE("Tube rond"), IPE("IPE"), CUSTOM("Quelconque");
-
-    public final String label;
-
-    Kind(String label) {
-      this.label = label;
-    }
+    RECT, ROUND, TUBE, IPE, CUSTOM;
 
     @Override
     public String toString() {
-      return label;
+      return tr("section." + name());
     }
   }
 
@@ -89,20 +85,20 @@ public record Section(Kind kind, double p1, double p2, double p3) {
       case IPE -> false;
       case CUSTOM -> p1 <= 0 || p2 <= 0 || p3 <= 0;
     };
-    return bad ? "section invalide (" + label() + ")" : null;
+    return bad ? tr("section.invalid", label()) : null;
   }
 
   public String label() {
     return switch (kind) {
-      case RECT -> String.format(Locale.FRANCE, "Rect. %s × %s mm", g(p1), g(p2));
-      case ROUND -> String.format(Locale.FRANCE, "Rond Ø%s mm", g(p1));
-      case TUBE -> String.format(Locale.FRANCE, "Tube Ø%s × %s mm", g(p1), g(p2));
+      case RECT -> tr("section.label.RECT", g(p1), g(p2));
+      case ROUND -> tr("section.label.ROUND", g(p1));
+      case TUBE -> tr("section.label.TUBE", g(p1), g(p2));
       case IPE -> "IPE " + g(p1);
-      case CUSTOM -> String.format(Locale.FRANCE, "A = %s cm², I = %s cm⁴", g(p1), g(p2));
+      case CUSTOM -> tr("section.label.CUSTOM", g(p1), g(p2));
     };
   }
 
   private static String g(double v) {
-    return v == Math.rint(v) ? Long.toString((long) v) : Double.toString(v).replace('.', ',');
+    return v == Math.rint(v) ? Long.toString((long) v) : Tr.decimal(Double.toString(v));
   }
 }

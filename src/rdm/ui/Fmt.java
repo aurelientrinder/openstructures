@@ -2,8 +2,9 @@ package rdm.ui;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import rdm.i18n.Tr;
 
-/** Numbers on screen: 4 significant digits, decimal comma; typed numbers accept a comma or a point. */
+/** Numbers on screen: 4 significant digits, the language's decimal separator; typed numbers accept a comma or a point. */
 final class Fmt {
   private Fmt() {}
 
@@ -14,7 +15,7 @@ final class Fmt {
     double a = Math.abs(v);
     if (a >= 1e-3 && a < 1e7) s = new BigDecimal(v).round(new MathContext(4)).stripTrailingZeros().toPlainString();
     else s = String.format(java.util.Locale.ROOT, "%.3e", v);
-    return s.replace('.', ',').replace('-', '−');
+    return Tr.decimal(s).replace('-', '−');
   }
 
   /** A typed number; throws NumberFormatException. */

@@ -1,5 +1,7 @@
 package rdm.ui;
 
+import static rdm.i18n.Tr.tr;
+
 import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -300,7 +302,7 @@ final class StructureCanvas extends JPanel {
           return;
         }
         if (node == null) return;
-        double[] v = ask("Force sur le nœud " + s.number(node), new String[] {"Fx (kN)", "Fy (kN)"}, new double[] {node.fx / 1e3, node.fy / 1e3});
+        double[] v = ask(tr("canvas.nodeForce", s.number(node)), new String[] {"Fx (kN)", "Fy (kN)"}, new double[] {node.fx / 1e3, node.fy / 1e3});
         if (v != null) app.edit(() -> {
           node.fx = v[0] * 1e3;
           node.fy = v[1] * 1e3;
@@ -313,7 +315,7 @@ final class StructureCanvas extends JPanel {
           return;
         }
         if (node == null) return;
-        double[] v = ask("Couple sur le nœud " + s.number(node), new String[] {"Mz (kN·m, + trigonométrique)"}, new double[] {node.mz / 1e3});
+        double[] v = ask(tr("canvas.nodeMoment", s.number(node)), new String[] {tr("canvas.mz")}, new double[] {node.mz / 1e3});
         if (v != null) app.edit(() -> node.mz = v[0] * 1e3);
         app.select(node);
       }
@@ -376,7 +378,7 @@ final class StructureCanvas extends JPanel {
         for (int i = 0; i < labels.length; i++) out[i] = Fmt.parse(fields[i].getText());
         return out;
       } catch (NumberFormatException ex) {
-        JOptionPane.showMessageDialog(this, "Nombre attendu.", title, JOptionPane.WARNING_MESSAGE);
+        JOptionPane.showMessageDialog(this, tr("load.number"), title, JOptionPane.WARNING_MESSAGE);
       }
     }
   }
@@ -389,16 +391,14 @@ final class StructureCanvas extends JPanel {
     Node n = nodeAt(px, py);
     if (n != null) {
       double[] d = sol.disp[s.nodes.indexOf(n)];
-      return "Nœud " + s.number(n) + " : ux = " + Fmt.mm(d[0]) + ", uy = " + Fmt.mm(d[1])
-          + (Double.isNaN(d[2]) ? "" : ", θz = " + Fmt.num(d[2] * 1e3) + " mrad");
+      return tr("canvas.readNode", s.number(n), Fmt.mm(d[0]), Fmt.mm(d[1])) + (Double.isNaN(d[2]) ? "" : tr("canvas.readRotation", Fmt.num(d[2] * 1e3)));
     }
     Object[] hit = elementAt(px, py);
     if (hit == null) return null;
     ElementResult r = sol.of((Element) hit[0]);
     double x = (Double) hit[1] * r.L;
     double[] d = r.displacement(x);
-    return "Élément " + s.number(r.element) + ", x = " + Fmt.num(x) + " m : N = " + Fmt.kN(r.N(x)) + ", T = " + Fmt.kN(r.T(x))
-        + ", Mf = " + Fmt.kNm(r.M(x)) + ", déplacement = " + Fmt.mm(Math.hypot(d[0], d[1]));
+    return tr("canvas.readElement", s.number(r.element), Fmt.num(x), Fmt.kN(r.N(x)), Fmt.kN(r.T(x)), Fmt.kNm(r.M(x)), Fmt.mm(Math.hypot(d[0], d[1])));
   }
 
   // ——— painting ———
@@ -528,7 +528,7 @@ final class StructureCanvas extends JPanel {
     for (Element e : s.elements) for (ElementLoad l : e.loads) paintLoad(g, e, l);
     if (s.selfWeight && !s.elements.isEmpty()) {
       g.setFont(g.getFont().deriveFont(Font.BOLD));
-      g.drawString("Poids propre inclus", 12, getHeight() - 30);
+      g.drawString(tr("canvas.selfWeight"), 12, getHeight() - 30);
       g.setFont(g.getFont().deriveFont(Font.PLAIN));
     }
   }
@@ -639,7 +639,7 @@ final class StructureCanvas extends JPanel {
       g.draw(p);
     }
     g.setFont(g.getFont().deriveFont(Font.BOLD));
-    g.drawString("Déformée × " + Fmt.num(k), 12, getHeight() - 12);
+    g.drawString(tr("canvas.deformed", Fmt.num(k)), 12, getHeight() - 12);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 
@@ -707,7 +707,7 @@ final class StructureCanvas extends JPanel {
     }
     g.setColor(color);
     g.setFont(g.getFont().deriveFont(Font.BOLD));
-    g.drawString(d.label + " (max " + Fmt.num(max / 1e3) + unit + ")", 12, 20);
+    g.drawString(d + " (max " + Fmt.num(max / 1e3) + unit + ")", 12, 20);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 

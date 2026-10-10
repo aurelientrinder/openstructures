@@ -1,5 +1,7 @@
 package rdm.ui;
 
+import static rdm.i18n.Tr.tr;
+
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
@@ -98,65 +100,63 @@ final class Inspector extends JPanel implements Scrollable {
   // ——— forms ———
 
   private void structure() {
-    heading("Structure");
-    value("Nœuds", () -> Integer.toString(app.structure().nodes.size()));
-    value("Éléments", () -> Integer.toString(app.structure().elements.size()));
+    heading(tr("insp.structure"));
+    value(tr("insp.nodes"), () -> Integer.toString(app.structure().nodes.size()));
+    value(tr("insp.elements"), () -> Integer.toString(app.structure().elements.size()));
     Solution sol = app.solution();
     if (sol.status == Solution.Status.OK || sol.status == Solution.Status.MECHANISM) {
-      value("Hyperstatisme, h", () -> Integer.toString(app.solution().h));
-      value("Mobilité, m", () -> Integer.toString(app.solution().m));
+      value(tr("insp.h"), () -> Integer.toString(app.solution().h));
+      value(tr("insp.m"), () -> Integer.toString(app.solution().m));
     }
-    check("Poids propre (ρ·A·g, g = 9,81 m/s²)", () -> app.structure().selfWeight, v -> app.structure().selfWeight = v);
-    heading("Mode d'emploi");
-    note("Dessinez avec Poutre ou Barre, posez des appuis sur les nœuds, puis des charges. Le calcul se refait à chaque modification.", false);
-    note("Cliquez un nœud ou un élément pour voir et modifier ses données. Survolez la structure pour lire N, T, Mf et le déplacement "
-        + "en chaque point.", false);
-    note("Clic droit ou molette enfoncée : déplacer la vue ; molette : zoom. Réglages › Taille de l'interface pour tout agrandir.", false);
-    note("Hypothèses : élasticité linéaire, petits déplacements, poutres d'Euler–Bernoulli (déformation d'effort tranchant négligée), "
-        + "sections constantes.", true);
+    check(tr("insp.selfWeight"), () -> app.structure().selfWeight, v -> app.structure().selfWeight = v);
+    heading(tr("insp.howTo"));
+    note(tr("insp.help1"), false);
+    note(tr("insp.help2"), false);
+    note(tr("insp.help3"), false);
+    note(tr("insp.assumptions"), true);
   }
 
   private void node(Node n) {
     Structure s = app.structure();
-    heading("Nœud " + s.number(n));
+    heading(tr("insp.node", s.number(n)));
     number("x (m)", () -> n.x, v -> n.x = v);
     number("y (m)", () -> n.y, v -> n.y = v);
-    heading("Appui");
+    heading(tr("insp.support"));
     JComboBox<Support> sup = new JComboBox<>(Support.values());
     sup.setSelectedItem(n.support);
     sup.addActionListener(e -> {
       Support v = (Support) sup.getSelectedItem();
       if (v != n.support) app.edit(() -> n.support = v);
     });
-    field("Type", sup);
+    field(tr("insp.type"), sup);
     if (n.support.skewed() || n.support == Support.PIVOT) {
-      number("Normale (° depuis x)", () -> n.supportAngle, v -> n.supportAngle = v);
+      number(tr("insp.normal"), () -> n.supportAngle, v -> n.supportAngle = v);
     }
     // a blocked component may settle; a skewed support's are along t and n, the others' along x and y
-    String[] axis = n.support.skewed() ? new String[] {"selon t", "selon n"} : new String[] {"ux", "uy"};
+    String[] axis = n.support.skewed() ? new String[] {tr("insp.alongT"), tr("insp.alongN")} : new String[] {"ux", "uy"};
     if (n.support == Support.ELASTIQUE) {
-      number("Raideur " + axis[0] + " (kN/m)", () -> n.springT / 1e3, v -> n.springT = v * 1e3);
-      number("Raideur " + axis[1] + " (kN/m)", () -> n.springN / 1e3, v -> n.springN = v * 1e3);
-      number("Raideur en rotation (kN·m/rad)", () -> n.springR / 1e3, v -> n.springR = v * 1e3);
+      number(tr("insp.stiffness", axis[0]), () -> n.springT / 1e3, v -> n.springT = v * 1e3);
+      number(tr("insp.stiffness", axis[1]), () -> n.springN / 1e3, v -> n.springN = v * 1e3);
+      number(tr("insp.rotationStiffness"), () -> n.springR / 1e3, v -> n.springR = v * 1e3);
     } else if (n.support != Support.NONE) {
-      if (n.support.t) number((n.support.skewed() ? "u imposé " + axis[0] : axis[0] + " imposé") + " (mm)", () -> n.settleT * 1e3, v -> n.settleT = v / 1e3);
-      if (n.support.n) number((n.support.skewed() ? "u imposé " + axis[1] : axis[1] + " imposé") + " (mm)", () -> n.settleN * 1e3, v -> n.settleN = v / 1e3);
-      if (n.support.r) number("θz imposé (mrad)", () -> n.settleR * 1e3, v -> n.settleR = v / 1e3);
+      if (n.support.t) number(n.support.skewed() ? tr("insp.imposedAlong", axis[0]) : tr("insp.imposed", axis[0]), () -> n.settleT * 1e3, v -> n.settleT = v / 1e3);
+      if (n.support.n) number(n.support.skewed() ? tr("insp.imposedAlong", axis[1]) : tr("insp.imposed", axis[1]), () -> n.settleN * 1e3, v -> n.settleN = v / 1e3);
+      if (n.support.r) number(tr("insp.imposedRotation"), () -> n.settleR * 1e3, v -> n.settleR = v / 1e3);
     }
-    heading("Charges");
+    heading(tr("insp.loads"));
     number("Fx (kN)", () -> n.fx / 1e3, v -> n.fx = v * 1e3);
     number("Fy (kN)", () -> n.fy / 1e3, v -> n.fy = v * 1e3);
     number("Mz (kN·m)", () -> n.mz / 1e3, v -> n.mz = v * 1e3);
     if (app.solution().ok()) {
       int i = s.nodes.indexOf(n);
-      heading("Résultats");
+      heading(tr("insp.results"));
       value("ux", () -> app.solution().ok() ? Fmt.mm(app.solution().disp[i][0]) : "—");
       value("uy", () -> app.solution().ok() ? Fmt.mm(app.solution().disp[i][1]) : "—");
       value("θz", () -> app.solution().ok() ? Fmt.num(app.solution().disp[i][2] * 1e3) + " mrad" : "—");
       if (n.support != Support.NONE) {
-        value("Réaction Rx", () -> reaction(i, 0, false));
-        value("Réaction Ry", () -> reaction(i, 1, false));
-        value("Réaction Mz", () -> reaction(i, 2, true));
+        value(tr("insp.reaction", "Rx"), () -> reaction(i, 0, false));
+        value(tr("insp.reaction", "Ry"), () -> reaction(i, 1, false));
+        value(tr("insp.reaction", "Mz"), () -> reaction(i, 2, true));
       }
     }
   }
@@ -173,13 +173,13 @@ final class Inspector extends JPanel implements Scrollable {
     text.setColumns(8);
     line.add(text, java.awt.BorderLayout.CENTER);
     JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0));
-    JButton change = new JButton("Modifier");
+    JButton change = new JButton(tr("insp.edit"));
     change.addActionListener(ev -> {
       ElementLoad v = LoadDialog.edit(this, e, l);
       if (v != null) app.edit(() -> e.loads.set(e.loads.indexOf(l), v));
     });
     JButton remove = new JButton("×");
-    remove.setToolTipText("Supprimer cette charge");
+    remove.setToolTipText(tr("insp.removeLoad"));
     remove.addActionListener(ev -> app.edit(() -> e.loads.remove(l)));
     buttons.add(change);
     buttons.add(remove);
@@ -209,28 +209,28 @@ final class Inspector extends JPanel implements Scrollable {
 
   private void element(Element e) {
     Structure s = app.structure();
-    heading((e.isBar() ? "Barre " : "Poutre ") + s.number(e) + "  (nœuds " + s.number(e.a) + " → " + s.number(e.b) + ")");
-    value("Longueur", () -> Fmt.num(e.length()) + " m");
-    check("Rotule à l'origine", () -> e.hingeA, v -> e.hingeA = v);
-    check("Rotule à l'extrémité", () -> e.hingeB, v -> e.hingeB = v);
+    heading(tr(e.isBar() ? "insp.bar" : "insp.beam", s.number(e), s.number(e.a), s.number(e.b)));
+    value(tr("insp.length"), () -> Fmt.num(e.length()) + " m");
+    check(tr("insp.hingeA"), () -> e.hingeA, v -> e.hingeA = v);
+    check(tr("insp.hingeB"), () -> e.hingeB, v -> e.hingeB = v);
 
-    heading("Section");
+    heading(tr("insp.section"));
     JComboBox<Section.Kind> kind = new JComboBox<>(Section.Kind.values());
     kind.setSelectedItem(e.section.kind());
     kind.addActionListener(ev -> {
       Section.Kind k = (Section.Kind) kind.getSelectedItem();
       if (k != e.section.kind()) app.edit(() -> e.section = Section.of(k));
     });
-    field("Forme", kind);
+    field(tr("insp.shape"), kind);
     switch (e.section.kind()) {
       case RECT -> {
         sectionParam(e, "b (mm)", 1);
-        sectionParam(e, "h (mm, dans le plan)", 2);
+        sectionParam(e, tr("insp.rectH"), 2);
       }
       case ROUND -> sectionParam(e, "d (mm)", 1);
       case TUBE -> {
-        sectionParam(e, "d extérieur (mm)", 1);
-        sectionParam(e, "épaisseur e (mm)", 2);
+        sectionParam(e, tr("insp.tubeD"), 1);
+        sectionParam(e, tr("insp.tubeE"), 2);
       }
       case IPE -> {
         JComboBox<String> size = new JComboBox<>();
@@ -240,18 +240,18 @@ final class Inspector extends JPanel implements Scrollable {
           double h = Section.IPE_TABLE[size.getSelectedIndex()][0];
           if (h != e.section.p1()) app.edit(() -> e.section = new Section(Section.Kind.IPE, h, 0, 0));
         });
-        field("Profilé", size);
+        field(tr("insp.profile"), size);
       }
       case CUSTOM -> {
         sectionParam(e, "A (cm²)", 1);
         sectionParam(e, "I (cm⁴)", 2);
-        sectionParam(e, "v (cm, fibre extrême)", 3);
+        sectionParam(e, tr("insp.fibre"), 3);
       }
     }
     value("A", () -> Fmt.num(e.section.area() * 1e4) + " cm²");
     value("I", () -> Fmt.num(e.section.inertia() * 1e8) + " cm⁴");
 
-    heading("Matériau");
+    heading(tr("insp.material"));
     JComboBox<Material> mat = new JComboBox<>();
     Material.PRESETS.forEach(mat::addItem);
     if (!Material.PRESETS.contains(e.material)) mat.addItem(e.material);
@@ -260,29 +260,29 @@ final class Inspector extends JPanel implements Scrollable {
       Material m = (Material) mat.getSelectedItem();
       if (m != null && !m.equals(e.material)) app.edit(() -> e.material = m);
     });
-    field("Matériau", mat);
+    field(tr("insp.material"), mat);
     number("E (MPa)", () -> e.material.E(), v -> e.material = Material.of(v, e.material.rho()));
     number("ρ (kg/m³)", () -> e.material.rho(), v -> e.material = Material.of(e.material.E(), v));
 
-    heading("Charges sur l'élément");
-    if (e.loads.isEmpty()) note("Aucune. Outils Force (F), Couple (M) ou Charge répartie (Q) sur l'élément, ou :", false);
+    heading(tr("insp.elementLoads"));
+    if (e.loads.isEmpty()) note(tr("insp.noLoads"), false);
     for (ElementLoad l : e.loads) loadRow(e, l);
     JPanel add = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
-    add.add(button("+ Force", () -> LoadDialog.force(this, e, new ElementLoad.Force(0.5, 0, -10e3, false)), e));
-    add.add(button("+ Couple", () -> LoadDialog.couple(this, e, new ElementLoad.Couple(0.5, 10e3)), e));
-    add.add(button("+ Répartie", () -> LoadDialog.distributed(this, e, ElementLoad.Distributed.uniform(0, -10e3)), e));
+    add.add(button(tr("insp.addForce"), () -> LoadDialog.force(this, e, new ElementLoad.Force(0.5, 0, -10e3, false)), e));
+    add.add(button(tr("insp.addCouple"), () -> LoadDialog.couple(this, e, new ElementLoad.Couple(0.5, 10e3)), e));
+    add.add(button(tr("insp.addDistributed"), () -> LoadDialog.distributed(this, e, ElementLoad.Distributed.uniform(0, -10e3)), e));
     GridBagConstraints ac = constraints(0);
     ac.gridwidth = 2;
     add(add, ac);
     row++;
 
     if (app.solution().ok()) {
-      heading("Résultats (repère local : x de l'origine vers l'extrémité)");
-      value("N origine / extrémité", () -> ends(e, ElementResult::N, false));
-      value("T origine / extrémité", () -> ends(e, ElementResult::T, false));
-      value("Mf origine / extrémité", () -> ends(e, ElementResult::M, true));
-      value("|Mf| max", () -> result(e, r -> Fmt.kNm(r.maxAbsM())));
-      value("σ max (|N|/A + |Mf|·v/I)", () -> result(e, r -> Fmt.MPa(r.sigmaMax())));
+      heading(tr("insp.elementResults"));
+      value(tr("insp.endsN"), () -> ends(e, ElementResult::N, false));
+      value(tr("insp.endsT"), () -> ends(e, ElementResult::T, false));
+      value(tr("insp.endsM"), () -> ends(e, ElementResult::M, true));
+      value(tr("insp.maxM"), () -> result(e, r -> Fmt.kNm(r.maxAbsM())));
+      value(tr("insp.sigma"), () -> result(e, r -> Fmt.MPa(r.sigmaMax())));
     }
   }
 

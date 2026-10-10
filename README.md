@@ -1,17 +1,24 @@
-# OpenStructures — Ossatures planes (proof of concept)
+# OpenStructures (proof of concept)
 
 [![Checks](https://github.com/aurelientrinder/openstructures/actions/workflows/checks.yml/badge.svg)](https://github.com/aurelientrinder/openstructures/actions/workflows/checks.yml)
 
 A small Résistance des Matériaux application in Java, in the spirit of RDM7's *Ossatures* module: draw plane
 beams and trusses, put supports and loads on them, and see straight away how they deform, with the
-internal forces (N, T, Mf), the reactions and the degree of hyperstatism. Every change is solved again live,
-including while a node is being dragged.
+internal forces (N, V, M), the reactions and the degree of static indeterminacy. Every change is solved again
+live, including while a node is being dragged.
 
-Plain Java 21 + Swing, no dependencies, no build tool.
+In English and in French (Settings › Language; it follows the system's language at first). Plain Java 21 +
+Swing, no dependencies, no build tool.
 
 ![A portal frame: bending moment diagram, deformed shape and reactions](docs/frame.png)
 
-![A beam with a point load, a triangular load, a couple and an overhang: shear force diagram and the element's loads](docs/beam.png)
+![A beam with a point load, a triangular load, a moment and an overhang: shear force diagram and the element's loads](docs/beam.png)
+
+<details><summary>En français</summary>
+
+![Le même portique en français : moment fléchissant, déformée et réactions](docs/frame-fr.png)
+
+</details>
 
 ## Download
 
@@ -31,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver against closed-form results (103 checks)
+verify.cmd       :: the solver against closed-form results, and the texts (112 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -48,25 +55,29 @@ javac -encoding UTF-8 -d out/test $(find src test -name '*.java') && java -cp ou
 
 | Tool (key) | What it does |
 | --- | --- |
-| Sélection (S) | select a node or an element, drag a node |
-| Nœud (N) | place a node; on an element, cuts it in two |
-| Poutre (P) / Barre (B) | click two points; chains, Échap or right-click stops. A *barre* is hinged at both ends |
-| Encastrement (E), Pivot (D), Appui simple (R), Glissière (G) | click a node (again: removes it). The normal of an appui simple / glissière is set in the properties, and so is an imposed displacement of what it blocks (a support that settles) |
-| Appui élastique (K) | click a node: springs along t, n and in rotation, stiffnesses in the properties |
-| Force (F), Couple (M) | click a node, or a point of an element (anywhere along it, no node needed); type the values (kN, kN·m, counter-clockwise positive) |
-| Charge répartie (Q) | click an element: a load in kN per metre of element, uniform or linear (triangle, trapezoid), on all of it or part, on the global axes or the element's |
-| Rotule (H) | click an element near one end: hinge (articulation) there |
-| Effacer (X) | click a node or an element; Suppr deletes the selection |
+| Select (S) — *Sélection* | select a node or an element, drag a node |
+| Node (N) — *Nœud* | place a node; on an element, cuts it in two |
+| Beam (P) / Bar (B) — *Poutre / Barre* | click two points; chains on, Esc or right-click stops. A bar is hinged at both ends |
+| Fixed support (E), Pin (D), Roller (R), Slider (G) — *Encastrement, Pivot, Appui simple, Glissière* | click a node (again: removes it). The normal of a roller or slider is set in the properties, and so is an imposed displacement of what it blocks (a support that settles) |
+| Spring support (K) — *Appui élastique* | click a node: springs along t, n and in rotation, stiffnesses in the properties |
+| Force (F), Moment (M) — *Force, Couple* | click a node, or a point of an element (anywhere along it, no node needed); type the values (kN, kN·m, counter-clockwise positive) |
+| Distributed load (Q) — *Charge répartie* | click an element: a load in kN per metre of element, uniform or linear (triangle, trapezoid), on all of it or part, on the global axes or the element's |
+| Hinge (H) — *Rotule* | click an element near one end: hinge there |
+| Delete (X) — *Effacer* | click a node or an element; Del deletes the selection |
 
-Right or middle drag pans, the wheel zooms. Hover the structure to read N, T, Mf and the displacement at that
-point in the status bar. Ctrl+Z / Ctrl+Y undo and redo. Fichier › Exemples has eight ready-made structures.
-An element's loads are listed in its properties, where they can be changed, removed or added. The structure's
-properties (nothing selected) switch the self-weight on: ρ·A·g per metre of each element, from its material.
-The « Résultats » tab lists every number (displacements, reactions, end forces, maxima, σ max).
+The keys are the same in both languages. Right or middle drag pans, the wheel zooms. Hover the structure to read
+N, V, M and the displacement at that point in the status bar. Ctrl+Z / Ctrl+Y undo and redo. File › Examples has
+eight ready-made structures. An element's loads are listed in its properties, where they can be changed, removed
+or added. The structure's properties (nothing selected) switch the self-weight on: ρ·A·g per metre of each
+element, from its material. The Results tab lists every number (displacements, reactions, end forces, maxima,
+σ max).
 
-**Réglages › Taille de l'interface** scales everything (menus, panels, fonts and the drawing) from 100 % to 300 %,
-or leaves it to Windows' display scale. It is kept between runs and applies when the app starts again: it offers
-to restart at once, keeping the drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -jar rdm.jar`.
+In French the shear force and the bending moment are written T and Mf, as in French courses; in English V and M.
+
+**Settings › Interface size** scales everything (menus, panels, fonts and the drawing) from 100 % to 300 %, or
+leaves it to the system's display scale. **Settings › Language** picks English, French or the system's language.
+Both are kept between runs and apply when the app starts again: it offers to restart at once, keeping the
+drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -jar rdm.jar`.
 
 Units: lengths in m, forces in kN, sections in mm (IPE from the table, or A/I/v in cm), E in MPa, ρ in kg/m³,
 imposed displacements in mm and mrad, spring stiffnesses in kN/m and kN·m/rad.
@@ -84,6 +95,9 @@ Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java`.
   equivalent nodal forces come from the Hermite shape functions, N, T, Mf and the deflection from closed-form
   integrals of what lies before the cut. Imposed displacements go to the right-hand side; springs add to the
   diagonal.
+- `rdm.i18n` — the texts: `En` and `Fr` map the same keys to each language, `Tr.tr(key, args…)` looks them up.
+  To add a language, copy `Fr.java`, translate it and add it to `Tr.Lang`; `Verify` checks that every language
+  has every key with the same arguments.
 - `rdm.ui` — the Swing window (`MainFrame`, which also holds undo and solves after every edit), the drawing
   (`StructureCanvas`, `Symbols`), the properties panel (`Inspector`) and the text report (`Report`).
 
@@ -108,7 +122,7 @@ combinations, printing/export.
 
 ## Contributing
 
-Issues and pull requests are welcome. Every push and pull request runs `test/rdm/Verify.java` on Linux, Windows
+Issues and pull requests are welcome, translations too (see `rdm.i18n` above). Every push and pull request runs `test/rdm/Verify.java` on Linux, Windows
 and macOS (`.github/workflows/checks.yml`); a change to the solver should come with a check against a closed-form
 result. Pushing a tag `vX.Y.Z` builds the packages above and publishes the release (`.github/workflows/release.yml`).
 

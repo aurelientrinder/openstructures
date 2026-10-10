@@ -1,19 +1,24 @@
 package rdm;
 
+import java.util.Locale;
 import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
+import javax.swing.JComponent;
+import rdm.i18n.Tr;
 
 /**
  * What the application remembers between runs (Java user preferences: the registry on Windows).
  *
  * The interface size is Java's {@code sun.java2d.uiScale}: it scales every widget, font and drawing stroke at
  * once and stays sharp, but it is read when the window system starts, so a change applies at the next start.
+ * So does the language, which the whole window is built in.
  */
 public final class Settings {
   private Settings() {}
 
   private static final Preferences PREFS = Preferences.userNodeForPackage(Settings.class);
   private static final String UI_SCALE = "uiScale";
+  private static final String LANGUAGE = "language";
 
   /** The sizes offered, as factors; 0 leaves the size to the system (Windows' display scale). */
   public static final double[] UI_SCALES = {0, 1, 1.25, 1.5, 1.75, 2, 2.5, 3};
@@ -25,6 +30,23 @@ public final class Settings {
   public static void setUiScale(double s) {
     if (s > 0) PREFS.putDouble(UI_SCALE, s);
     else PREFS.remove(UI_SCALE);
+    flush();
+  }
+
+  /** The language chosen, or null to follow the system's. */
+  public static Tr.Lang language() {
+    String l = PREFS.get(LANGUAGE, null);
+    for (Tr.Lang v : Tr.Lang.values()) if (v.name().equals(l)) return v;
+    return null;
+  }
+
+  public static void setLanguage(Tr.Lang l) {
+    if (l != null) PREFS.put(LANGUAGE, l.name());
+    else PREFS.remove(LANGUAGE);
+    flush();
+  }
+
+  private static void flush() {
     try {
       PREFS.flush();
     } catch (BackingStoreException ignored) {
@@ -32,9 +54,16 @@ public final class Settings {
     }
   }
 
-  /** Sets the interface size; must run before any AWT or Swing class starts. A size given on the command line wins. */
+  /**
+   * Sets the interface size and the language; must run before any AWT or Swing class starts. A size given on the
+   * command line wins. Swing's own texts (Yes, Cancel, the file chooser) follow the language through the locale.
+   */
   static void applyAtStartup() {
     double s = uiScale();
     if (s > 0 && System.getProperty("sun.java2d.uiScale") == null) System.setProperty("sun.java2d.uiScale", Double.toString(s));
+    Tr.Lang l = language();
+    Tr.use(l != null ? l : Tr.system());
+    Locale.setDefault(Tr.lang().locale);
+    JComponent.setDefaultLocale(Tr.lang().locale);
   }
 }

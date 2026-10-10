@@ -1,5 +1,7 @@
 package rdm.ui;
 
+import static rdm.i18n.Tr.tr;
+
 import java.awt.Component;
 import java.awt.GridLayout;
 import javax.swing.JCheckBox;
@@ -11,7 +13,7 @@ import rdm.model.Element;
 import rdm.model.ElementLoad;
 
 /**
- * The dialogs that create or change a load on an element (Force, Couple and Charge répartie tools, and the
+ * The dialogs that create or change a load on an element (Force, Moment and Distributed load tools, and the
  * properties panel). Positions are typed in metres from the element's origin (node a), values in kN, kN·m, kN/m.
  */
 final class LoadDialog {
@@ -28,15 +30,15 @@ final class LoadDialog {
 
   static ElementLoad force(Component parent, Element e, ElementLoad.Force init) {
     double L = e.length();
-    Form f = new Form("Force sur l'élément", "Repère local de l'élément (x de l'origine vers l'extrémité)", init.local());
-    f.field("Position depuis l'origine (m, longueur " + Fmt.num(L) + ")", init.t() * L);
+    Form f = new Form(tr("load.force"), tr("load.forceLocal"), init.local());
+    f.field(tr("load.position", Fmt.num(L)), init.t() * L);
     f.field("Fx (kN)", init.fx() / 1e3);
     f.field("Fy (kN)", init.fy() / 1e3);
     while (true) {
       double[] v = f.ask(parent);
       if (v == null) return null;
       if (v[0] <= 0 || v[0] >= L) {
-        f.complain(parent, "La force doit être à l'intérieur de l'élément (sur un nœud, mettez-la sur le nœud).");
+        f.complain(parent, tr("load.forceOutside"));
         continue;
       }
       return new ElementLoad.Force(v[0] / L, v[1] * 1e3, v[2] * 1e3, f.local());
@@ -45,14 +47,14 @@ final class LoadDialog {
 
   static ElementLoad couple(Component parent, Element e, ElementLoad.Couple init) {
     double L = e.length();
-    Form f = new Form("Couple sur l'élément", null, false);
-    f.field("Position depuis l'origine (m, longueur " + Fmt.num(L) + ")", init.t() * L);
-    f.field("C (kN·m, + trigonométrique)", init.c() / 1e3);
+    Form f = new Form(tr("load.couple"), null, false);
+    f.field(tr("load.position", Fmt.num(L)), init.t() * L);
+    f.field(tr("load.coupleValue"), init.c() / 1e3);
     while (true) {
       double[] v = f.ask(parent);
       if (v == null) return null;
       if (v[0] <= 0 || v[0] >= L) {
-        f.complain(parent, "Le couple doit être à l'intérieur de l'élément (sur un nœud, mettez-le sur le nœud).");
+        f.complain(parent, tr("load.coupleOutside"));
         continue;
       }
       return new ElementLoad.Couple(v[0] / L, v[1] * 1e3);
@@ -61,18 +63,18 @@ final class LoadDialog {
 
   static ElementLoad distributed(Component parent, Element e, ElementLoad.Distributed init) {
     double L = e.length();
-    Form f = new Form("Charge répartie sur l'élément", "Repère local de l'élément (y perpendiculaire à l'élément)", init.local());
-    f.field("Début (m depuis l'origine)", init.t1() * L);
-    f.field("Fin (m, longueur " + Fmt.num(L) + ")", init.t2() * L);
-    f.field("qx au début (kN/m)", init.qx1() / 1e3);
-    f.field("qy au début (kN/m)", init.qy1() / 1e3);
-    f.field("qx à la fin (kN/m)", init.qx2() / 1e3);
-    f.field("qy à la fin (kN/m)", init.qy2() / 1e3);
+    Form f = new Form(tr("load.distributed"), tr("load.distributedLocal"), init.local());
+    f.field(tr("load.start"), init.t1() * L);
+    f.field(tr("load.end", Fmt.num(L)), init.t2() * L);
+    f.field(tr("load.qx1"), init.qx1() / 1e3);
+    f.field(tr("load.qy1"), init.qy1() / 1e3);
+    f.field(tr("load.qx2"), init.qx2() / 1e3);
+    f.field(tr("load.qy2"), init.qy2() / 1e3);
     while (true) {
       double[] v = f.ask(parent);
       if (v == null) return null;
       if (v[0] < 0 || v[1] > L + 1e-9 || v[1] <= v[0]) {
-        f.complain(parent, "Il faut 0 ≤ début < fin ≤ " + Fmt.num(L) + " m.");
+        f.complain(parent, tr("load.range", Fmt.num(L)));
         continue;
       }
       return new ElementLoad.Distributed(v[0] / L, Math.min(1, v[1] / L), v[2] * 1e3, v[3] * 1e3, v[4] * 1e3, v[5] * 1e3, f.local());
@@ -83,17 +85,20 @@ final class LoadDialog {
   static String describe(Element e, ElementLoad l) {
     double L = e.length();
     return switch (l) {
-      case ElementLoad.Force f -> "Force (" + Fmt.num(f.fx() / 1e3) + " ; " + Fmt.num(f.fy() / 1e3) + ") kN à " + Fmt.num(f.t() * L) + " m"
-          + (f.local() ? ", locale" : "");
-      case ElementLoad.Couple c -> "Couple " + Fmt.kNm(c.c()) + " à " + Fmt.num(c.t() * L) + " m";
+      case ElementLoad.Force f -> tr("load.describeForce", pair(f.fx(), f.fy()), Fmt.num(f.t() * L)) + (f.local() ? tr("load.describeLocal") : "");
+      case ElementLoad.Couple c -> tr("load.describeCouple", Fmt.kNm(c.c()), Fmt.num(c.t() * L));
       case ElementLoad.Distributed d -> {
         boolean uniform = d.qx1() == d.qx2() && d.qy1() == d.qy2();
-        String values = uniform ? "(" + Fmt.num(d.qx1() / 1e3) + " ; " + Fmt.num(d.qy1() / 1e3) + ")"
-            : "(" + Fmt.num(d.qx1() / 1e3) + " ; " + Fmt.num(d.qy1() / 1e3) + ") → (" + Fmt.num(d.qx2() / 1e3) + " ; " + Fmt.num(d.qy2() / 1e3) + ")";
-        String span = d.t1() == 0 && d.t2() == 1 ? "" : " de " + Fmt.num(d.t1() * L) + " à " + Fmt.num(d.t2() * L) + " m";
-        yield "Répartie " + values + " kN/m" + span + (d.local() ? ", locale" : "");
+        String values = uniform ? pair(d.qx1(), d.qy1()) : pair(d.qx1(), d.qy1()) + " → " + pair(d.qx2(), d.qy2());
+        String span = d.t1() == 0 && d.t2() == 1 ? "" : tr("load.describeSpan", Fmt.num(d.t1() * L), Fmt.num(d.t2() * L));
+        yield tr("load.describeDistributed", values) + span + (d.local() ? tr("load.describeLocal") : "");
       }
     };
+  }
+
+  /** (x ; y) in kN, from newtons. */
+  private static String pair(double x, double y) {
+    return tr("load.pair", Fmt.num(x / 1e3), Fmt.num(y / 1e3));
   }
 
   /** A column of number fields, and maybe the local-axes box. */
@@ -130,7 +135,7 @@ final class LoadDialog {
           for (int i = 0; i < out.length; i++) out[i] = Fmt.parse(fields.get(i).getText());
           return out;
         } catch (NumberFormatException ex) {
-          complain(parent, "Nombre attendu.");
+          complain(parent, tr("load.number"));
         }
       }
     }

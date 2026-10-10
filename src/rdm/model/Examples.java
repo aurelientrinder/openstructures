@@ -1,24 +1,31 @@
 package rdm.model;
 
+import static rdm.i18n.Tr.tr;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
-/** Ready-made structures (Fichier › Exemples), also handy to try the solver. */
+/** Ready-made structures (File › Examples), also handy to try the solver. Keyed by name; title() gives the title. */
 public final class Examples {
   private Examples() {}
 
   public static final Map<String, Supplier<Structure>> ALL = new LinkedHashMap<>();
 
   static {
-    ALL.put("Poutre console (force en bout)", Examples::cantilever);
-    ALL.put("Poutre sur deux appuis (charge répartie)", Examples::simplySupported);
-    ALL.put("Poutre continue sur trois appuis (h = 1)", Examples::continuous);
-    ALL.put("Portique encastré", Examples::portal);
-    ALL.put("Portique à trois articulations", Examples::threeHinged);
-    ALL.put("Treillis Warren", Examples::warren);
-    ALL.put("Poutre : force, couple et charge triangulaire", Examples::mixedLoads);
-    ALL.put("Poutre continue sur appui élastique, avec tassement", Examples::springAndSettlement);
+    ALL.put("cantilever", Examples::cantilever);
+    ALL.put("simplySupported", Examples::simplySupported);
+    ALL.put("continuous", Examples::continuous);
+    ALL.put("portal", Examples::portal);
+    ALL.put("threeHinged", Examples::threeHinged);
+    ALL.put("warren", Examples::warren);
+    ALL.put("mixedLoads", Examples::mixedLoads);
+    ALL.put("springAndSettlement", Examples::springAndSettlement);
+  }
+
+  /** The title of an example, in the interface's language. */
+  public static String title(String name) {
+    return tr("example." + name);
   }
 
   private static void uniform(Element e, double qy) {

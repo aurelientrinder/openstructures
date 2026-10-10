@@ -1,5 +1,7 @@
 package rdm.solver;
 
+import static rdm.i18n.Tr.tr;
+
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -40,9 +42,9 @@ public final class Solver {
     int internal = 0;
     for (Element e : st.elements) {
       int a = index.get(e.a), b = index.get(e.b);
-      String bad = e.length() == 0 ? "élément " + st.number(e) + " de longueur nulle"
-          : e.section.problem() != null ? "élément " + st.number(e) + " : " + e.section.problem()
-          : e.material.E() <= 0 ? "élément " + st.number(e) + " : module d'Young nul" : null;
+      String bad = e.length() == 0 ? tr("solver.zeroLength", st.number(e))
+          : e.section.problem() != null ? tr("solver.element", st.number(e), e.section.problem())
+          : e.material.E() <= 0 ? tr("solver.zeroE", st.number(e)) : null;
       if (bad != null) {
         sol.status = Solution.Status.ERROR;
         sol.error = bad;
@@ -91,14 +93,14 @@ public final class Solver {
     for (int i = 0; i < n; i++) {
       Node nd = st.nodes.get(i);
       if (!used[i]) {
-        if (nd.loaded() || nd.support != Support.NONE) sol.warnings.add("nœud " + (i + 1) + " isolé : ignoré");
+        if (nd.loaded() || nd.support != Support.NONE) sol.warnings.add(tr("solver.isolated", i + 1));
         continue;
       }
       double[] R = frame[i];
       F[3 * i] += R[0] * nd.fx + R[1] * nd.fy;
       F[3 * i + 1] += R[2] * nd.fx + R[3] * nd.fy;
       if (turns[i]) F[3 * i + 2] += nd.mz;
-      else if (nd.mz != 0) sol.warnings.add("nœud " + (i + 1) + " : moment ignoré, tous les éléments y sont articulés");
+      else if (nd.mz != 0) sol.warnings.add(tr("solver.momentIgnored", i + 1));
     }
 
     // springs of the elastic supports, on the diagonal; each is one more unknown force for the hyperstatism
@@ -110,12 +112,12 @@ public final class Solver {
         double kk = nd.spring(k);
         if (kk < 0) {
           sol.status = Solution.Status.ERROR;
-          sol.error = "nœud " + (i + 1) + " : raideur de ressort négative";
+          sol.error = tr("solver.negativeSpring", i + 1);
           return sol;
         }
         if (kk == 0) continue;
         if (k == 2 && !turns[i]) {
-          sol.warnings.add("nœud " + (i + 1) + " : ressort de rotation ignoré, tous les éléments y sont articulés");
+          sol.warnings.add(tr("solver.rotationSpringIgnored", i + 1));
           continue;
         }
         K[3 * i + k][3 * i + k] += kk;
@@ -142,7 +144,7 @@ public final class Solver {
       Node nd = st.nodes.get(i);
       for (int k = 0; k < 3; k++) {
         if (!blocked[3 * i + k] || nd.settle(k) == 0) continue;
-        if (k == 2 && !turns[i]) sol.warnings.add("nœud " + (i + 1) + " : rotation imposée ignorée, tous les éléments y sont articulés");
+        if (k == 2 && !turns[i]) sol.warnings.add(tr("solver.rotationSettlementIgnored", i + 1));
         else U[3 * i + k] = nd.settle(k);
       }
     }
@@ -165,8 +167,8 @@ public final class Solver {
         if (!ch.nullPivot[p]) continue;
         int d = free.get(p);
         Node nd = st.nodes.get(d / 3);
-        String name = d % 3 < 2 && nd.support.skewed() ? (d % 3 == 0 ? "t (le long de l'appui)" : "n") : names[d % 3];
-        sol.free.add("nœud " + (d / 3 + 1) + " : " + name);
+        String name = d % 3 < 2 && nd.support.skewed() ? (d % 3 == 0 ? tr("solver.alongSupport") : "n") : names[d % 3];
+        sol.free.add(tr("solver.free", d / 3 + 1, name));
       }
       sol.status = Solution.Status.MECHANISM;
       return sol;

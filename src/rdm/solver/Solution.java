@@ -24,7 +24,7 @@ public final class Solution {
   public String error;
   /** degree of hyperstatism (static indeterminacy) and of mobility */
   public int h, m;
-  /** the unknowns the structure is free along, when it is a mechanism: "nœud 3 : ux" */
+  /** the unknowns the structure is free along, when it is a mechanism: "node 3: ux" */
   public final List<String> free = new ArrayList<>();
   public final List<String> warnings = new ArrayList<>();
   /** per node: ux, uy, θz on the global axes (θz NaN where every element is hinged: no rotation of its own) */

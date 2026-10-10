@@ -1,5 +1,7 @@
 package rdm.io;
 
+import static rdm.i18n.Tr.tr;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -66,7 +68,7 @@ public final class StructureFile {
   public static Structure read(String text) {
     Structure s = new Structure();
     String[] lines = text.split("\\R");
-    if (lines.length == 0 || !lines[0].trim().startsWith("RDM")) throw new IllegalArgumentException("ce n'est pas un fichier RDM");
+    if (lines.length == 0 || !lines[0].trim().startsWith("RDM")) throw new IllegalArgumentException(tr("file.notRdm"));
     for (int k = 1; k < lines.length; k++) {
       String l = lines[k].trim();
       if (l.isEmpty() || l.startsWith("#")) continue;
@@ -110,10 +112,10 @@ public final class StructureFile {
           case "force" -> element(s, w[1]).loads.add(new ElementLoad.Force(d(w[2]), d(w[3]), d(w[4]), w[5].equals("1")));
           case "couple" -> element(s, w[1]).loads.add(new ElementLoad.Couple(d(w[2]), d(w[3])));
           case "dist" -> element(s, w[1]).loads.add(new ElementLoad.Distributed(d(w[2]), d(w[3]), d(w[4]), d(w[5]), d(w[6]), d(w[7]), w[8].equals("1")));
-          default -> throw new IllegalArgumentException("ligne inconnue");
+          default -> throw new IllegalArgumentException(tr("file.unknownLine"));
         }
       } catch (RuntimeException ex) {
-        throw new IllegalArgumentException("ligne " + (k + 1) + " illisible : " + l, ex);
+        throw new IllegalArgumentException(tr("file.badLine", k + 1, l), ex);
       }
     }
     return s;
