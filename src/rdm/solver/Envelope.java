@@ -11,20 +11,20 @@ import rdm.model.Structure;
 
 /**
  * The envelope of the combinations (courbe enveloppe): every combination solved, and along each element the
- * largest and smallest N, T and Mf any of them gives, with the largest and smallest reactions at each support.
+ * largest and smallest N, V and M any of them gives, with the largest and smallest reactions at each support.
  *
  * Along an element the extremes are taken at the abscissas where some combination's curves may peak or jump: even
- * steps, either side of every load's jump, and where each combination's T vanishes (its Mf peaks).
+ * steps, either side of every load's jump, and where each combination's V vanishes (its M peaks).
  */
 public final class Envelope {
   /** the internal forces, as ElementResult gives them */
   public enum Effort {
-    N, T, M;
+    N, V, M;
 
     public double at(ElementResult r, double x) {
       return switch (this) {
         case N -> r.N(x);
-        case T -> r.T(x);
+        case V -> r.T(x);
         case M -> r.M(x);
       };
     }

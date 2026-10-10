@@ -415,7 +415,7 @@ final class Inspector extends JPanel implements Scrollable {
     if (app.envelopeShown()) {
       heading(tr("insp.envelopeResults"));
       value(tr("insp.rangeN"), () -> extremes(e, Envelope.Effort.N, false));
-      value(tr("insp.rangeT"), () -> extremes(e, Envelope.Effort.T, false));
+      value(tr("insp.rangeT"), () -> extremes(e, Envelope.Effort.V, false));
       value(tr("insp.rangeM"), () -> extremes(e, Envelope.Effort.M, true));
       liveNote(() -> worst(e, tr("insp.maxM"), ElementResult::maxAbsM, Fmt::kNm));
       liveNote(() -> worst(e, tr("insp.sigma"), ElementResult::sigmaMax, Fmt::MPa));

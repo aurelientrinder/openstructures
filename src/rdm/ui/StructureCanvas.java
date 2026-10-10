@@ -409,7 +409,7 @@ final class StructureCanvas extends JPanel {
       Element e = (Element) hit[0];
       double x = (Double) hit[1] * e.length();
       Envelope env = app.envelope();
-      double[] n = env.range(e, Envelope.Effort.N, x), t = env.range(e, Envelope.Effort.T, x), m = env.range(e, Envelope.Effort.M, x);
+      double[] n = env.range(e, Envelope.Effort.N, x), t = env.range(e, Envelope.Effort.V, x), m = env.range(e, Envelope.Effort.M, x);
       return tr("canvas.readEnvelope", s.number(e), Fmt.num(x), Fmt.num(n[0] / 1e3), Fmt.kN(n[1]), Fmt.num(t[0] / 1e3), Fmt.kN(t[1]),
           Fmt.num(m[0] / 1e3), Fmt.kNm(m[1]));
     }
@@ -876,7 +876,7 @@ final class StructureCanvas extends JPanel {
    */
   private void paintEnvelope(Graphics2D g, Envelope env) {
     MainFrame.Diagram d = app.diagram;
-    Envelope.Effort q = d == MainFrame.Diagram.N ? Envelope.Effort.N : d == MainFrame.Diagram.T ? Envelope.Effort.T : Envelope.Effort.M;
+    Envelope.Effort q = d == MainFrame.Diagram.N ? Envelope.Effort.N : d == MainFrame.Diagram.T ? Envelope.Effort.V : Envelope.Effort.M;
     String unit = d == MainFrame.Diagram.M ? " kN·m" : " kN";
     Color color = diagramColor(d);
     double max = 0, top = Double.NEGATIVE_INFINITY, bottom = Double.POSITIVE_INFINITY;
