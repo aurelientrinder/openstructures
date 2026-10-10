@@ -255,7 +255,6 @@ final class En {
       "insp.noLoadsHere", "None",
       "insp.combinations", "Combinations",
       "insp.maxDisplacement", "Largest displacement",
-      "insp.inCombination", "In combination",
       "insp.caseHelp", "Loads, imposed displacements and the self-weight are put in this case. Another case, a combination or the envelope: Show, above the drawing.",
       "insp.combinationHelp", "The loads of its cases, times their factors, drawn and solved together. They are changed in their case.",
       "insp.envelopeHelp", "Every combination is solved: the diagrams show the largest and the smallest values along each element, the reactions their range.",
@@ -311,7 +310,7 @@ final class En {
       "insp.rangeN", "N min … max",
       "insp.rangeT", "V min … max",
       "insp.rangeM", "M min … max",
-      "insp.byCombination", "%s (%s)",
+      "insp.worstIn", "%s: %s, in %s",
 
       // ——— load dialogs ———
       "load.force", "Force on the element",

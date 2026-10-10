@@ -47,7 +47,15 @@ final class CasesDialog {
     dialog = new JDialog(app, tr("cases.title"), true);
     caseTable = new JTable(cases);
     caseTable.getColumnModel().getColumn(1).setCellEditor(new DefaultCellEditor(new JComboBox<>(LoadCase.Type.values())));
-    comboTable = new JTable(combos);
+    javax.swing.table.DefaultTableCellRenderer right = new javax.swing.table.DefaultTableCellRenderer();
+    right.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
+    // the factors' columns come and go with the cases: their renderer is chosen here, not set on each column
+    comboTable = new JTable(combos) {
+      @Override
+      public javax.swing.table.TableCellRenderer getCellRenderer(int row, int col) {
+        return col == 0 ? super.getCellRenderer(row, col) : right;
+      }
+    };
     for (JTable t : List.of(caseTable, comboTable)) {
       t.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
       t.putClientProperty("terminateEditOnFocusLost", true);

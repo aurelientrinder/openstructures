@@ -710,11 +710,11 @@ final class StructureCanvas extends JPanel {
       if (r == null) continue;
       Node n = s.nodes.get(i);
       double x = sx(n.x), y = sy(n.y);
-      // drawn on the far side of the support, pointing at the node
+      // drawn on the far side of the support, pointing at the node; Rx's label below the tail of an upward Ry
       if (Math.abs(r[0]) > tiny) {
         double ux = Math.signum(r[0]);
         Symbols.arrow(g, x - ux * 55, y + 34, x - ux * 12, y + 34);
-        labelAway(g, "Rx = " + Fmt.kN(r[0]), x - ux * 60, y + 50, 0, 14);
+        labelAway(g, "Rx = " + Fmt.kN(r[0]), x - ux * 60, y + 64, 0, 14);
       }
       if (Math.abs(r[1]) > tiny) {
         double uy = -Math.signum(r[1]);
@@ -747,8 +747,9 @@ final class StructureCanvas extends JPanel {
         double way = Math.abs(hi[j]) >= Math.abs(lo[j]) ? Math.signum(hi[j]) : Math.signum(lo[j]);
         String text = names[j] + " = " + Fmt.num(lo[j] / 1e3) + " … " + (j == 2 ? Fmt.kNm(hi[j]) : Fmt.kN(hi[j]));
         if (j == 0) {
+          // a range is long: under the node, not beyond the arrow's tail (off the drawing at the edge)
           Symbols.arrow(g, x - way * 55, y + 34, x - way * 12, y + 34);
-          labelAway(g, text, x - way * 60, y + 50, 0, 14);
+          labelAway(g, text, x - way * 12, y + 64, 0, 14);
         } else if (j == 1) {
           double uy = -way;
           Symbols.arrow(g, x + 30, y - uy * 55, x + 30, y - uy * 12);
@@ -840,15 +841,19 @@ final class StructureCanvas extends JPanel {
 
       // the values are written last (paintTags), where they don't cover the loads' and reactions' labels
       double v0 = q.at(r, 0), v1 = q.at(r, r.L);
-      if (Math.abs(v0 - v1) < 1e-9 * max) {
+      if (Math.abs(v0 - v1) < 1e-9 * max && Math.abs(q.at(r, r.L / 2) - v0) < 1e-9 * max) {
         tags.add(new Tag(r, r.L / 2, v0, px, unit, max, color));
       } else {
         tags.add(new Tag(r, 0, v0, px, unit, max, color));
         tags.add(new Tag(r, r.L, v1, px, unit, max, color));
       }
-      double peak = d == MainFrame.Diagram.M ? r.maxMAt() : -1;
-      if (peak > 0 && peak < r.L && Math.abs(q.at(r, peak)) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) {
-        tags.add(new Tag(r, peak, q.at(r, peak), px, unit, max, color));
+      if (d == MainFrame.Diagram.M) {
+        // the largest |Mf| inside the element, unless the ends already say it
+        double peak = -1;
+        for (double x : r.extremaM()) if (x > 1e-6 * r.L && x < r.L * (1 - 1e-6) && (peak < 0 || Math.abs(r.M(x)) > Math.abs(r.M(peak)))) peak = x;
+        if (peak > 0 && Math.abs(r.M(peak) - v0) > 0.01 * max && Math.abs(r.M(peak) - v1) > 0.01 * max) {
+          tags.add(new Tag(r, peak, r.M(peak), px, unit, max, color));
+        }
       }
     }
     g.setColor(color);
@@ -921,15 +926,18 @@ final class StructureCanvas extends JPanel {
 
       for (double[] curve : new double[][] {hi, lo}) {
         double v0 = curve[0], v1 = curve[curve.length - 1];
-        if (Math.abs(v0 - v1) < 1e-9 * max) {
+        boolean constant = true;
+        for (double v : curve) constant &= Math.abs(v - v0) < 1e-9 * max;
+        if (constant) {
           tags.add(new Tag(r, r.L / 2, v0, px, unit, max, color));
-        } else {
-          tags.add(new Tag(r, 0, v0, px, unit, max, color));
-          tags.add(new Tag(r, r.L, v1, px, unit, max, color));
+          continue;
         }
+        tags.add(new Tag(r, 0, v0, px, unit, max, color));
+        tags.add(new Tag(r, r.L, v1, px, unit, max, color));
+        // the curve's peak inside the element (the largest of the maxima, the smallest of the minima), unless the ends say it
         int peak = curve == hi ? a.highest(q) : a.lowest(q);
         double v = curve[peak];
-        if (a.x[peak] > 0 && a.x[peak] < r.L && Math.abs(v) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) {
+        if (a.x[peak] > 1e-6 * r.L && a.x[peak] < r.L * (1 - 1e-6) && Math.abs(v - v0) > 0.01 * max && Math.abs(v - v1) > 0.01 * max) {
           tags.add(new Tag(r, a.x[peak], v, px, unit, max, color));
         }
       }
@@ -980,7 +988,7 @@ final class StructureCanvas extends JPanel {
         }
       }
       double fx = X, fy = Y;
-      if (placed.stream().anyMatch(p -> p[2] == Math.rint(t.v) && Math.hypot(p[0] - fx, p[1] - fy) < 60)) continue;
+      if (placed.stream().anyMatch(p -> p[2] == Math.rint(t.v) && Math.hypot(p[0] - fx, p[1] - fy) < 80)) continue;
       placed.add(new double[] {X, Y, Math.rint(t.v)});
       g.setColor(t.color);
       label(g, text, X, Y);

@@ -255,7 +255,6 @@ final class Fr {
       "insp.noLoadsHere", "Aucune",
       "insp.combinations", "Combinaisons",
       "insp.maxDisplacement", "Déplacement maximal",
-      "insp.inCombination", "Dans la combinaison",
       "insp.caseHelp", "Les charges, les déplacements imposés et le poids propre se mettent dans ce cas. Un autre cas, une combinaison ou l'enveloppe : Afficher, au-dessus du dessin.",
       "insp.combinationHelp", "Les charges de ses cas, multipliées par leurs coefficients, dessinées et calculées ensemble. Elles se modifient dans leur cas.",
       "insp.envelopeHelp", "Chaque combinaison est calculée : les diagrammes montrent les plus grandes et les plus petites valeurs le long de chaque élément, les réactions leur étendue.",
@@ -311,7 +310,7 @@ final class Fr {
       "insp.rangeN", "N min … max",
       "insp.rangeT", "T min … max",
       "insp.rangeM", "Mf min … max",
-      "insp.byCombination", "%s (%s)",
+      "insp.worstIn", "%s : %s, dans %s",
 
       // ——— load dialogs ———
       "load.force", "Force sur l'élément",

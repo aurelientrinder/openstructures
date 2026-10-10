@@ -131,8 +131,10 @@ final class Inspector extends JPanel implements Scrollable {
     } else {
       value(tr("insp.combinations"), () -> Integer.toString(s.combinations.size()));
       if (app.envelopeShown()) {
-        value(tr("insp.maxDisplacement"), () -> app.envelopeShown() ? Fmt.mm(app.envelope().maxDisplacement) : "—");
-        value(tr("insp.inCombination"), () -> app.envelopeShown() ? app.envelope().combinations.get(app.envelope().maxDisplacementBy).name : "—");
+        liveNote(() -> {
+          Envelope env = app.envelope();
+          return !app.envelopeShown() ? "" : tr("insp.worstIn", tr("insp.maxDisplacement"), Fmt.mm(env.maxDisplacement), env.combinations.get(env.maxDisplacementBy).name);
+        });
       }
     }
     note(tr(c != null ? "insp.caseHelp" : k != null ? "insp.combinationHelp" : "insp.envelopeHelp"), false);
@@ -415,8 +417,8 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.rangeN"), () -> extremes(e, Envelope.Effort.N, false));
       value(tr("insp.rangeT"), () -> extremes(e, Envelope.Effort.T, false));
       value(tr("insp.rangeM"), () -> extremes(e, Envelope.Effort.M, true));
-      value(tr("insp.maxM"), () -> worst(e, ElementResult::maxAbsM, Fmt::kNm));
-      value(tr("insp.sigma"), () -> worst(e, ElementResult::sigmaMax, Fmt::MPa));
+      liveNote(() -> worst(e, tr("insp.maxM"), ElementResult::maxAbsM, Fmt::kNm));
+      liveNote(() -> worst(e, tr("insp.sigma"), ElementResult::sigmaMax, Fmt::MPa));
     } else if (app.solution().ok()) {
       heading(tr("insp.elementResults"));
       value(tr("insp.endsN"), () -> ends(e, ElementResult::N, false));
@@ -447,8 +449,8 @@ final class Inspector extends JPanel implements Scrollable {
   }
 
   /** The largest of a result over the combinations, and the combination that gives it. */
-  private String worst(Element e, java.util.function.ToDoubleFunction<ElementResult> f, java.util.function.DoubleFunction<String> fmt) {
-    if (!app.envelopeShown()) return "—";
+  private String worst(Element e, String label, java.util.function.ToDoubleFunction<ElementResult> f, java.util.function.DoubleFunction<String> fmt) {
+    if (!app.envelopeShown()) return "";
     Envelope env = app.envelope();
     int by = 0;
     double best = -1;
@@ -459,7 +461,7 @@ final class Inspector extends JPanel implements Scrollable {
         by = k;
       }
     }
-    return tr("insp.byCombination", fmt.apply(best), env.combinations.get(by).name);
+    return tr("insp.worstIn", label, fmt.apply(best), env.combinations.get(by).name);
   }
 
   private String result(Element e, java.util.function.Function<ElementResult, String> f) {
@@ -497,6 +499,13 @@ final class Inspector extends JPanel implements Scrollable {
     c.insets = new Insets(0, 0, 8, 0);
     add(t, c);
     row++;
+  }
+
+  /** A paragraph whose text follows the results, the panel's width. */
+  private void liveNote(Supplier<String> text) {
+    note(text.get(), false);
+    JTextArea t = (JTextArea) getComponent(getComponentCount() - 1);
+    updaters.add(() -> t.setText(text.get()));
   }
 
   // follows the width of the scroll pane: the notes wrap instead of running past the edge
