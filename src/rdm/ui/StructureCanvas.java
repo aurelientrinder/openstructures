@@ -19,6 +19,7 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.util.List;
 import javax.swing.JLabel;
@@ -455,6 +456,8 @@ final class StructureCanvas extends JPanel {
     g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
     Structure s = app.structure();
     Solution sol = app.solution();
+    taken.clear();
+    tags.clear();
     if (!exporting) paintGrid(g);
     if (sol.ok() && app.diagram != MainFrame.Diagram.NONE) paintDiagram(g, sol);
     paintElements(g, s);
@@ -462,6 +465,7 @@ final class StructureCanvas extends JPanel {
     paintSupportsAndHinges(g, s);
     paintLoads(g, s);
     if (sol.ok() && app.showReactions) paintReactions(g, s, sol);
+    paintTags(g);
     paintNodes(g, s);
     if (chain != null && !exporting) {
       double[] p = pointAt(mouseX, mouseY);
@@ -641,16 +645,16 @@ final class StructureCanvas extends JPanel {
       if (Math.abs(r[0]) > tiny) {
         double ux = Math.signum(r[0]);
         Symbols.arrow(g, x - ux * 55, y + 34, x - ux * 12, y + 34);
-        label(g, "Rx = " + Fmt.kN(r[0]), x - ux * 60, y + 50);
+        labelAway(g, "Rx = " + Fmt.kN(r[0]), x - ux * 60, y + 50, 0, 14);
       }
       if (Math.abs(r[1]) > tiny) {
         double uy = -Math.signum(r[1]);
         Symbols.arrow(g, x + 30, y - uy * 55, x + 30, y - uy * 12);
-        label(g, "Ry = " + Fmt.kN(r[1]), x + 34, y - uy * 62);
+        labelAway(g, "Ry = " + Fmt.kN(r[1]), x + 34, y - uy * 62, 0, -uy * 14);
       }
       if (Math.abs(r[2]) > tiny) {
         Symbols.moment(g, x, y, 30, r[2] > 0);
-        label(g, "Mz = " + Fmt.kNm(r[2]), x - 34, y - 38);
+        labelAway(g, "Mz = " + Fmt.kNm(r[2]), x - 34, y - 38, 0, -14);
       }
     }
   }
@@ -715,7 +719,6 @@ final class StructureCanvas extends JPanel {
     }
     if (max < 1e-9) return;
     double px = 55 / max;
-    placed.clear();
     List<ElementResult> rs = sol.elements;
     for (ElementResult r : rs) {
       // drawn on the local y side for positive values (screen: y down)
@@ -737,15 +740,18 @@ final class StructureCanvas extends JPanel {
       g.setStroke(new BasicStroke(1.2f));
       g.draw(p);
 
+      // the values are written last (paintTags), where they don't cover the loads' and reactions' labels
       double v0 = q.at(r, 0), v1 = q.at(r, r.L);
       if (Math.abs(v0 - v1) < 1e-9 * max) {
-        tag(g, r, r.L / 2, v0, px, unit, max);
+        tags.add(new Tag(r, r.L / 2, v0, px, unit, max, color));
       } else {
-        tag(g, r, 0, v0, px, unit, max);
-        tag(g, r, r.L, v1, px, unit, max);
+        tags.add(new Tag(r, 0, v0, px, unit, max, color));
+        tags.add(new Tag(r, r.L, v1, px, unit, max, color));
       }
       double peak = d == MainFrame.Diagram.M ? r.maxMAt() : -1;
-      if (peak > 0 && peak < r.L && Math.abs(q.at(r, peak)) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) tag(g, r, peak, q.at(r, peak), px, unit, max);
+      if (peak > 0 && peak < r.L && Math.abs(q.at(r, peak)) > 1.01 * Math.max(Math.abs(v0), Math.abs(v1))) {
+        tags.add(new Tag(r, peak, q.at(r, peak), px, unit, max, color));
+      }
     }
     g.setColor(color);
     g.setFont(g.getFont().deriveFont(Font.BOLD));
@@ -753,23 +759,74 @@ final class StructureCanvas extends JPanel {
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 
-  private void tag(Graphics2D g, ElementResult r, double x, double v, double px, String unit, double max) {
-    if (Math.abs(v) < 1e-6 * max) return;
-    double off = v * px + Math.signum(v) * 10;
-    // labels at the ends a little inside the element, so that neighbours don't write over each other
-    double xi = Math.max(r.L * 0.12, Math.min(r.L * 0.88, x));
-    double X = sx(r.element.a.x + r.c * xi) - r.s * off, Y = sy(r.element.a.y + r.s * xi) - r.c * off;
-    String text = Fmt.num(v / 1e3) + unit;
-    // the same value where elements meet is written once
-    for (double[] p : placed) if (p[2] == Math.rint(v) && Math.hypot(p[0] - X, p[1] - Y) < 60) return;
-    placed.add(new double[] {X, Y, Math.rint(v)});
-    label(g, text, X, Y);
+  /** A value of the diagram to write: at x along the element, beside the diagram. */
+  private record Tag(ElementResult r, double x, double v, double px, String unit, double max, Color color) {}
+
+  private final List<Tag> tags = new java.util.ArrayList<>();
+  /** the labels written so far in this painting */
+  private final List<Rectangle2D> taken = new java.util.ArrayList<>();
+
+  /**
+   * The diagram's values, beside it: where a label is already written, a little further out (up to 5 steps),
+   * and the same value where elements meet only once.
+   */
+  private void paintTags(Graphics2D g) {
+    List<double[]> placed = new java.util.ArrayList<>();
+    for (Tag t : tags) {
+      if (Math.abs(t.v) < 1e-6 * t.max) continue;
+      ElementResult r = t.r;
+      // labels at the ends a little inside the element, so that neighbours don't write over each other
+      double x0 = Math.max(r.L * 0.12, Math.min(r.L * 0.88, t.x));
+      String text = Fmt.num(t.v / 1e3) + t.unit;
+      double X = Double.NaN, Y = 0;
+      // further from the element, then a little along it towards its middle, until the place is free
+      search:
+      for (int j = 0; j < 4; j++) {
+        double xi = x0 + Math.signum(r.L / 2 - x0) * j * 0.1 * r.L;
+        for (int k = 0; k < 6; k++) {
+          double off = t.v * t.px + Math.signum(t.v) * (10 + 14 * k);
+          double x = sx(r.element.a.x + r.c * xi) - r.s * off, y = sy(r.element.a.y + r.s * xi) - r.c * off;
+          if (Double.isNaN(X)) {
+            X = x;
+            Y = y;
+          }
+          Rectangle2D box = box(g, text, x, y);
+          if (taken.stream().noneMatch(box::intersects)) {
+            X = x;
+            Y = y;
+            break search;
+          }
+        }
+      }
+      double fx = X, fy = Y;
+      if (placed.stream().anyMatch(p -> p[2] == Math.rint(t.v) && Math.hypot(p[0] - fx, p[1] - fy) < 60)) continue;
+      placed.add(new double[] {X, Y, Math.rint(t.v)});
+      g.setColor(t.color);
+      label(g, text, X, Y);
+    }
   }
 
-  private final List<double[]> placed = new java.util.ArrayList<>();
+  /** A label where it is free: at the point, else moved by (dx, dy) a few times. */
+  private void labelAway(Graphics2D g, String text, double x, double y, double dx, double dy) {
+    for (int k = 0; k < 5; k++) {
+      Rectangle2D box = box(g, text, x + k * dx, y + k * dy);
+      if (taken.stream().noneMatch(box::intersects)) {
+        label(g, text, x + k * dx, y + k * dy);
+        return;
+      }
+    }
+    label(g, text, x, y);
+  }
 
-  /** Text centred on a point, on a white halo. */
-  private static void label(Graphics2D g, String text, double x, double y) {
+  /** Where label() writes a text. */
+  private static Rectangle2D box(Graphics2D g, String text, double x, double y) {
+    var fm = g.getFontMetrics();
+    int w = fm.stringWidth(text);
+    return new Rectangle2D.Double(x - w / 2.0 - 2, y + fm.getAscent() / 2.0 - 1 - fm.getAscent(), w + 4, fm.getHeight());
+  }
+
+  /** Text centred on a point, on a white halo; its place is kept, for the diagram's values to keep off. */
+  private void label(Graphics2D g, String text, double x, double y) {
     var fm = g.getFontMetrics();
     int w = fm.stringWidth(text);
     float tx = (float) (x - w / 2.0), ty = (float) (y + fm.getAscent() / 2.0 - 1);
@@ -778,5 +835,6 @@ final class StructureCanvas extends JPanel {
     g.fillRect((int) tx - 2, (int) (ty - fm.getAscent()), w + 4, fm.getHeight());
     g.setColor(c);
     g.drawString(text, tx, ty);
+    taken.add(box(g, text, x, y));
   }
 }
