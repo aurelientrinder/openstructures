@@ -1,9 +1,11 @@
 package rdm.ui;
 
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.util.ArrayList;
@@ -18,7 +20,9 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.Scrollable;
 import rdm.model.Element;
 import rdm.model.Material;
 import rdm.model.Node;
@@ -33,7 +37,7 @@ import rdm.solver.Solution;
  * The form is built again only when what it shows changes kind; otherwise its values are refreshed in place,
  * so that a field being typed in keeps its focus.
  */
-final class Inspector extends JPanel {
+final class Inspector extends JPanel implements Scrollable {
   private final MainFrame app;
   private Object shownFor = new Object();
   private final List<Runnable> updaters = new ArrayList<>();
@@ -99,12 +103,12 @@ final class Inspector extends JPanel {
       value("Mobilité, m", () -> Integer.toString(app.solution().m));
     }
     heading("Mode d'emploi");
-    note("Dessinez avec <b>Poutre</b> ou <b>Barre</b>, posez des <b>appuis</b> sur les nœuds, puis des <b>charges</b>. "
-        + "Le calcul se refait à chaque modification.<br><br>Cliquez un nœud ou un élément pour voir et modifier ses données. "
-        + "Survolez la structure pour lire N, T, Mf et le déplacement en chaque point.<br><br>"
-        + "Clic droit ou molette enfoncée : déplacer la vue ; molette : zoom.<br><br>"
-        + "<i>Hypothèses : élasticité linéaire, petits déplacements, poutres d'Euler–Bernoulli (déformation d'effort tranchant négligée), "
-        + "sections constantes.</i>");
+    note("Dessinez avec Poutre ou Barre, posez des appuis sur les nœuds, puis des charges. Le calcul se refait à chaque modification.", false);
+    note("Cliquez un nœud ou un élément pour voir et modifier ses données. Survolez la structure pour lire N, T, Mf et le déplacement "
+        + "en chaque point.", false);
+    note("Clic droit ou molette enfoncée : déplacer la vue ; molette : zoom. Réglages › Taille de l'interface pour tout agrandir.", false);
+    note("Hypothèses : élasticité linéaire, petits déplacements, poutres d'Euler–Bernoulli (déformation d'effort tranchant négligée), "
+        + "sections constantes.", true);
   }
 
   private void node(Node n) {
@@ -253,13 +257,49 @@ final class Inspector extends JPanel {
     row++;
   }
 
-  private void note(String html) {
-    // a wrapped html label needs a width to wrap at
-    JLabel l = new JLabel("<html><div style='width:260px'>" + html + "</div></html>");
-    GridBagConstraints c = constraints(0);
+  /** A paragraph that wraps to the panel's width. */
+  private void note(String text, boolean italic) {
+    JTextArea t = new JTextArea(text);
+    t.setLineWrap(true);
+    t.setWrapStyleWord(true);
+    t.setEditable(false);
+    t.setFocusable(false);
+    t.setOpaque(false);
+    t.setFont(getFont().deriveFont(italic ? Font.ITALIC : Font.PLAIN));
+    // a small preferred width: the column gives it the panel's, and the text wraps to that
+    t.setColumns(8);
+    GridBagConstraints c = constraints(1);
+    c.gridx = 0;
     c.gridwidth = 2;
-    add(l, c);
+    c.insets = new Insets(0, 0, 8, 0);
+    add(t, c);
     row++;
+  }
+
+  // follows the width of the scroll pane: the notes wrap instead of running past the edge
+  @Override
+  public Dimension getPreferredScrollableViewportSize() {
+    return getPreferredSize();
+  }
+
+  @Override
+  public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+    return 16;
+  }
+
+  @Override
+  public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+    return visible.height;
+  }
+
+  @Override
+  public boolean getScrollableTracksViewportWidth() {
+    return true;
+  }
+
+  @Override
+  public boolean getScrollableTracksViewportHeight() {
+    return false;
   }
 
   private void field(String label, JComponent comp) {

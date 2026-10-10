@@ -11,7 +11,7 @@ Plain Java 21 + Swing, no dependencies, no build tool.
 
 ```bat
 run.cmd          :: builds rdm.jar and starts it
-build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar, or double-click it)
+build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
 verify.cmd       :: the solver against closed-form results (53 checks)
 ```
 
@@ -31,6 +31,10 @@ verify.cmd       :: the solver against closed-form results (53 checks)
 Right or middle drag pans, the wheel zooms. Hover the structure to read N, T, Mf and the displacement at that
 point in the status bar. Ctrl+Z / Ctrl+Y undo and redo. Fichier › Exemples has six ready-made structures.
 The « Résultats » tab lists every number (displacements, reactions, end forces, maxima, σ max).
+
+**Réglages › Taille de l'interface** scales everything (menus, panels, fonts and the drawing) from 100 % to 300 %,
+or leaves it to Windows' display scale. It is kept between runs and applies when the app starts again: it offers
+to restart at once, keeping the drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -jar rdm.jar`.
 
 Units: lengths in m, forces in kN, sections in mm (IPE from the table, or A/I/v in cm), E in MPa.
 Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java`.

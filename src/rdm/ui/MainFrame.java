@@ -6,10 +6,13 @@ import java.awt.Font;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
@@ -24,6 +27,7 @@ import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
@@ -34,6 +38,7 @@ import javax.swing.KeyStroke;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import rdm.Settings;
 import rdm.io.StructureFile;
 import rdm.model.Examples;
 import rdm.model.Structure;
@@ -105,7 +110,9 @@ public final class MainFrame extends JFrame {
     south.add(hint);
     add(south, BorderLayout.SOUTH);
 
-    setSize(1280, 800);
+    // at a large interface size the usual window would not fit on the screen (sizes here are before scaling)
+    java.awt.Rectangle screen = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+    setSize(Math.min(1280, screen.width), Math.min(800, screen.height));
     setLocationRelativeTo(null);
     setTool(Tool.SELECT);
     load(Examples.ALL.get("Portique encastré").get(), null);
@@ -211,7 +218,7 @@ public final class MainFrame extends JFrame {
     restore(redo.pop());
   }
 
-  void load(Structure s, Path from) {
+  public void load(Structure s, Path from) {
     structure = s;
     file = from;
     selection = null;
@@ -247,7 +254,43 @@ public final class MainFrame extends JFrame {
     JMenu v = new JMenu("Affichage");
     v.add(item("Ajuster à la fenêtre", 0, canvas::fit));
     bar.add(v);
+    JMenu r = new JMenu("Réglages");
+    JMenu size = new JMenu("Taille de l'interface");
+    ButtonGroup sizes = new ButtonGroup();
+    for (double k : Settings.UI_SCALES) {
+      JRadioButtonMenuItem it = new JRadioButtonMenuItem(k == 0 ? "Automatique (réglage de Windows)" : Math.round(k * 100) + " %", k == Settings.uiScale());
+      it.addActionListener(ev -> chooseScale(k));
+      sizes.add(it);
+      size.add(it);
+    }
+    r.add(size);
+    bar.add(r);
     return bar;
+  }
+
+  /** Keeps the new interface size, which applies at the next start: offers to start again now. */
+  private void chooseScale(double k) {
+    if (k == Settings.uiScale()) return;
+    Settings.setUiScale(k);
+    int answer = JOptionPane.showConfirmDialog(this, "La nouvelle taille s'applique au redémarrage.\nRedémarrer maintenant ? Le dessin en cours est conservé.",
+        "Taille de l'interface", JOptionPane.YES_NO_OPTION);
+    if (answer == JOptionPane.YES_OPTION) restart();
+  }
+
+  /** Starts the application again with the same Java and class path, handing it the drawing in progress. */
+  private void restart() {
+    try {
+      Path snapshot = Files.createTempFile("rdm-", ".rdm");
+      StructureFile.save(structure, snapshot);
+      String java = ProcessHandle.current().info().command().orElse("javaw");
+      List<String> cmd = new ArrayList<>(List.of(java, "-cp", System.getProperty("java.class.path"), "rdm.App", "--restore", snapshot.toString()));
+      if (file != null) cmd.add(file.toString());
+      new ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+      System.exit(0);
+    } catch (IOException ex) {
+      JOptionPane.showMessageDialog(this, "Impossible de redémarrer : " + ex.getMessage() + "\nRelancez l'application vous-même.", "Taille de l'interface",
+          JOptionPane.WARNING_MESSAGE);
+    }
   }
 
   private static JMenuItem item(String label, int key, Runnable action) {
