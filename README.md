@@ -1,4 +1,4 @@
-# RDM — Ossatures planes (proof of concept)
+# OpenStructures — Ossatures planes (proof of concept)
 
 A small Résistance des Matériaux application in Java, in the spirit of RDM7's *Ossatures* module: draw plane
 beams and trusses, put supports and loads on them, and see straight away how they deform, with the
@@ -13,6 +13,16 @@ Plain Java 21 + Swing, no dependencies, no build tool.
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
 verify.cmd       :: the solver against closed-form results (103 checks)
+```
+
+On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
+
+```sh
+javac -encoding UTF-8 -d out/classes $(find src -name '*.java')
+jar --create --file rdm.jar --main-class rdm.App -C out/classes .
+java -jar rdm.jar
+# the checks
+javac -encoding UTF-8 -d out/test $(find src test -name '*.java') && java -cp out/test rdm.Verify
 ```
 
 ## Use
@@ -76,3 +86,7 @@ sections.
 
 Thermal loads, buckling, 3D, shear deformation (Timoshenko), section catalogues other than IPE, load cases and
 combinations, printing/export.
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). Use it, change it, share it.
