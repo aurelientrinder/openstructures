@@ -132,6 +132,8 @@ final class SectionDialog extends JDialog {
     buildForm();
     update();
     pack();
+    // only now that the list has its size
+    kinds.ensureIndexIsVisible(kinds.getSelectedIndex());
     setLocationRelativeTo(parent);
   }
 

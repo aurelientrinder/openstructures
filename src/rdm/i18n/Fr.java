@@ -180,7 +180,7 @@ final class Fr {
       "sectionDialog.invalid", "Ces dimensions ne font pas une section (une paroi plus épaisse que la demi-largeur ?).",
       "sectionDialog.thinWalled", "Calculée à partir de ses rectangles, sans congés de raccordement : un profilé laminé a un peu plus.",
       "sectionDialog.rolled", "A, I et Wel d'après le programme de vente ArcelorMittal 2024-1 (dimensions EN 10365) ; v = I / Wel. Les ailes inclinées d'un UPN sont dessinées parallèles.",
-      "sectionDialog.hollow", "Fini à chaud, EN 10210-2 : A et I par les formules de son annexe A (congés de rayon 1,5 e à l'extérieur, e à l'intérieur).",
+      "sectionDialog.hollow", "Fini à chaud, EN 10210-2 : A et I par les formules de son annexe A (un tube rectangulaire avec des congés de rayon 1,5 e à l'extérieur, e à l'intérieur).",
       "sectionDialog.custom", "Saisie directe : pas de forme. v est la distance de l'axe neutre à la fibre la plus éloignée, pour σ.",
       "sectionDialog.cancel", "Annuler",
       "section.invalid", "section invalide (%s)",

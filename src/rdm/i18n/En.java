@@ -180,7 +180,7 @@ final class En {
       "sectionDialog.invalid", "These dimensions don't make a section (a wall thicker than half the width?).",
       "sectionDialog.thinWalled", "Computed from its rectangles, without root fillets: a rolled profile has slightly more.",
       "sectionDialog.rolled", "A, I and Wel from the ArcelorMittal sales programme 2024-1 (dimensions EN 10365); v = I / Wel. A UPN's tapered flanges are drawn parallel.",
-      "sectionDialog.hollow", "Hot-finished, EN 10210-2: A and I from its Annex A formulae (corners of radius 1.5 t outside, t inside).",
+      "sectionDialog.hollow", "Hot-finished, EN 10210-2: A and I from its Annex A formulae (a rectangular one with corners of radius 1.5 t outside, t inside).",
       "sectionDialog.custom", "Typed in: no shape. v is the distance from the neutral axis to the furthest fibre, for σ.",
       "sectionDialog.cancel", "Cancel",
       "section.invalid", "invalid section (%s)",
