@@ -1,0 +1,44 @@
+# Builds the application and runs the solver against closed-form results (test/rdm/Verify.java)
+# on every push and pull request, on Linux, Windows and macOS.
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Windows: the scripts people use
+      - name: Build (build.cmd)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: build.cmd
+      - name: Verify (verify.cmd)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: verify.cmd
+
+      # elsewhere: the commands of the README
+      - name: Build
+        if: runner.os != 'Windows'
+        run: |
+          javac -encoding UTF-8 --release 21 -d out/classes $(find src -name '*.java')
+          jar --create --file rdm.jar --main-class rdm.App -C out/classes .
+      - name: Verify
+        if: runner.os != 'Windows'
+        run: |
+          javac -encoding UTF-8 --release 21 -d out/test $(find src test -name '*.java')
+          java -Dstdout.encoding=UTF-8 -cp out/test rdm.Verify

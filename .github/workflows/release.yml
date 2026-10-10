@@ -1,0 +1,87 @@
+# Pushing a tag such as v0.1.0 publishes a GitHub release with:
+#  - rdm.jar, for anyone who has Java 21 or later;
+#  - a ready-to-run folder per system with its own Java inside (jpackage app image), nothing to install.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build and check
+        run: |
+          javac -encoding UTF-8 --release 21 -d out/test $(find src test -name '*.java')
+          java -Dstdout.encoding=UTF-8 -cp out/test rdm.Verify
+          javac -encoding UTF-8 --release 21 -d out/classes $(find src -name '*.java')
+          mkdir -p out/input
+          jar --create --file out/input/rdm.jar --main-class rdm.App -C out/classes .
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # macOS wants an application version whose first number is not 0: keep jpackage's default there
+          if [ "$RUNNER_OS" = macOS ]; then app_version=(); else app_version=(--app-version "${version%%-*}"); fi
+          jpackage --type app-image --input out/input --main-jar rdm.jar --main-class rdm.App \
+            --name OpenStructures --add-modules java.base,java.desktop,java.prefs "${app_version[@]}" --dest out/package
+          archive="OpenStructures-$version-${{ matrix.name }}"
+          cd out/package
+          case "$RUNNER_OS" in
+            Windows) 7z a -tzip "../$archive.zip" OpenStructures > /dev/null; echo "ASSET=out/$archive.zip" >> "$GITHUB_ENV" ;;
+            macOS)   ditto -c -k --keepParent OpenStructures.app "../$archive.zip"; echo "ASSET=out/$archive.zip" >> "$GITHUB_ENV" ;;
+            Linux)   tar -czf "../$archive.tar.gz" OpenStructures; echo "ASSET=out/$archive.tar.gz" >> "$GITHUB_ENV" ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.ASSET }}
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: jar
+          path: out/input/rdm.jar
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
+          body: |
+            **Which file?**
+            - **Windows**: `…-windows-x64.zip`. Unzip it and run `OpenStructures.exe`. Windows may warn that the publisher is unknown: *More info › Run anyway*.
+            - **macOS (Apple silicon)**: `…-macos-arm64.zip`. Unzip it; the first time, right-click `OpenStructures.app` › *Open* (the application is not signed).
+            - **Linux**: `…-linux-x64.tar.gz`. Extract it and run `OpenStructures/bin/OpenStructures`.
+            - **Anywhere with Java 21 or later** (including Intel Macs): `rdm.jar`. Double-click it, or `java -jar rdm.jar`.
+
+            The system packages carry their own Java: nothing else to install.

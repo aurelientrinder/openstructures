@@ -86,7 +86,7 @@ public final class MainFrame extends JFrame {
   private final Map<Tool, AbstractButton> toolButtons = new EnumMap<>(Tool.class);
 
   public MainFrame() {
-    super("RDM — Ossatures planes");
+    super("OpenStructures");
     setDefaultCloseOperation(EXIT_ON_CLOSE);
     setJMenuBar(menus());
     add(displayBar(), BorderLayout.NORTH);
@@ -227,7 +227,7 @@ public final class MainFrame extends JFrame {
     canvas.cancelChain();
     changed();
     canvas.fit();
-    setTitle("RDM — Ossatures planes" + (from == null ? "" : " — " + from.getFileName()));
+    setTitle("OpenStructures" + (from == null ? "" : " — " + from.getFileName()));
   }
 
   // ——— window parts ———
@@ -282,8 +282,15 @@ public final class MainFrame extends JFrame {
     try {
       Path snapshot = Files.createTempFile("rdm-", ".rdm");
       StructureFile.save(structure, snapshot);
-      String java = ProcessHandle.current().info().command().orElse("javaw");
-      List<String> cmd = new ArrayList<>(List.of(java, "-cp", System.getProperty("java.class.path"), "rdm.App", "--restore", snapshot.toString()));
+      // a packaged application (jpackage) has its own launcher, which takes only the application's arguments
+      String launcher = System.getProperty("jpackage.app-path");
+      List<String> cmd = new ArrayList<>();
+      if (launcher != null) {
+        cmd.add(launcher);
+      } else {
+        cmd.addAll(List.of(ProcessHandle.current().info().command().orElse("javaw"), "-cp", System.getProperty("java.class.path"), "rdm.App"));
+      }
+      cmd.addAll(List.of("--restore", snapshot.toString()));
       if (file != null) cmd.add(file.toString());
       new ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
       System.exit(0);
@@ -403,7 +410,7 @@ public final class MainFrame extends JFrame {
     try {
       StructureFile.save(structure, p);
       file = p;
-      setTitle("RDM — Ossatures planes — " + p.getFileName());
+      setTitle("OpenStructures — " + p.getFileName());
     } catch (IOException ex) {
       JOptionPane.showMessageDialog(this, "Impossible d'enregistrer :\n" + ex.getMessage(), "Enregistrer", JOptionPane.ERROR_MESSAGE);
     }

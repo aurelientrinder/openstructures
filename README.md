@@ -1,5 +1,7 @@
 # OpenStructures — Ossatures planes (proof of concept)
 
+[![Checks](https://github.com/aurelientrinder/openstructures/actions/workflows/checks.yml/badge.svg)](https://github.com/aurelientrinder/openstructures/actions/workflows/checks.yml)
+
 A small Résistance des Matériaux application in Java, in the spirit of RDM7's *Ossatures* module: draw plane
 beams and trusses, put supports and loads on them, and see straight away how they deform, with the
 internal forces (N, T, Mf), the reactions and the degree of hyperstatism. Every change is solved again live,
@@ -7,7 +9,24 @@ including while a node is being dragged.
 
 Plain Java 21 + Swing, no dependencies, no build tool.
 
-## Run
+![A portal frame: bending moment diagram, deformed shape and reactions](docs/frame.png)
+
+![A beam with a point load, a triangular load, a couple and an overhang: shear force diagram and the element's loads](docs/beam.png)
+
+## Download
+
+From the [latest release](https://github.com/aurelientrinder/openstructures/releases/latest):
+
+| System | File | Then |
+| --- | --- | --- |
+| Windows | `OpenStructures-…-windows-x64.zip` | unzip, run `OpenStructures.exe` (if Windows warns about an unknown publisher: *More info › Run anyway*) |
+| macOS, Apple silicon | `OpenStructures-…-macos-arm64.zip` | unzip; the first time, right-click `OpenStructures.app` › *Open* (it is not signed) |
+| Linux | `OpenStructures-…-linux-x64.tar.gz` | extract, run `OpenStructures/bin/OpenStructures` |
+| anything with Java 21+ | `rdm.jar` | double-click it, or `java -jar rdm.jar` |
+
+The system packages carry their own Java: nothing else to install.
+
+## Build from source
 
 ```bat
 run.cmd          :: builds rdm.jar and starts it
@@ -86,6 +105,12 @@ sections.
 
 Thermal loads, buckling, 3D, shear deformation (Timoshenko), section catalogues other than IPE, load cases and
 combinations, printing/export.
+
+## Contributing
+
+Issues and pull requests are welcome. Every push and pull request runs `test/rdm/Verify.java` on Linux, Windows
+and macOS (`.github/workflows/checks.yml`); a change to the solver should come with a check against a closed-form
+result. Pushing a tag `vX.Y.Z` builds the packages above and publishes the release (`.github/workflows/release.yml`).
 
 ## Licence
 
