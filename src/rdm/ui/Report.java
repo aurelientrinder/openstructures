@@ -2,6 +2,7 @@ package rdm.ui;
 
 import static rdm.i18n.Tr.tr;
 
+import rdm.i18n.Tr;
 import rdm.model.Node;
 import rdm.model.Structure;
 import rdm.model.Support;
@@ -68,6 +69,35 @@ final class Report {
     }
     b.append('\n').append(tr("report.maxDisplacement", Fmt.mm(sol.maxDisplacement))).append('\n');
     return b.toString();
+  }
+
+  /**
+   * The diagrams as a table, for a spreadsheet: for each element, points along it (both sides of every jump) with
+   * their position, N, V, M and displacement. Separated by ";" with decimal commas in French, "," and points in English.
+   */
+  static String csv(Solution sol) {
+    boolean comma = Tr.lang().decimal == ',';
+    String sep = comma ? ";" : ",";
+    StringBuilder b = new StringBuilder(String.join(sep, tr("csv.element"), "x (m)", "X (m)", "Y (m)", "N (kN)", tr("csv.T"), tr("csv.M"), "ux (mm)", "uy (mm)"));
+    b.append("\r\n");
+    for (ElementResult r : sol.elements) {
+      String n = Integer.toString(sol.structure.number(r.element));
+      for (double x : r.samples(40)) {
+        double[] d = r.displacement(x);
+        double[] v = {x, r.element.a.x + r.c * x, r.element.a.y + r.s * x, r.N(x) / 1e3, r.T(x) / 1e3, r.M(x) / 1e3, d[0] * 1e3, d[1] * 1e3};
+        b.append(n);
+        for (double w : v) b.append(sep).append(plain(w, comma));
+        b.append("\r\n");
+      }
+    }
+    return b.toString();
+  }
+
+  /** 7 significant digits, no exponent, the decimal separator asked for. */
+  private static String plain(double v, boolean comma) {
+    if (Math.abs(v) < 1e-12) return "0";
+    String s = new java.math.BigDecimal(v).round(new java.math.MathContext(7)).stripTrailingZeros().toPlainString();
+    return comma ? s.replace('.', ',') : s;
   }
 
   private static String k(double v) {

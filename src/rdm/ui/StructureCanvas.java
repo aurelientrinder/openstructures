@@ -19,6 +19,7 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
+import java.awt.image.BufferedImage;
 import java.util.List;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -407,12 +408,54 @@ final class StructureCanvas extends JPanel {
   protected void paintComponent(Graphics g0) {
     super.paintComponent(g0);
     Graphics2D g = (Graphics2D) g0.create();
+    paintScene(g);
+    g.dispose();
+  }
+
+  /** The drawing as it is on screen, as an image k times as fine (for a sharp print), without the grid or selection. */
+  BufferedImage image(int k) {
+    BufferedImage img = new BufferedImage(getWidth() * k, getHeight() * k, BufferedImage.TYPE_INT_RGB);
+    Graphics2D g = img.createGraphics();
+    g.setColor(Color.WHITE);
+    g.fillRect(0, 0, img.getWidth(), img.getHeight());
+    g.scale(k, k);
+    exporting(g);
+    g.dispose();
+    return img;
+  }
+
+  /** The drawing as it is on screen, as SVG, without the grid or selection. */
+  String svg() {
+    return SvgGraphics.draw(getWidth(), getHeight(), g -> {
+      g.setColor(Color.WHITE);
+      g.fillRect(0, 0, getWidth(), getHeight());
+      exporting(g);
+    });
+  }
+
+  private void exporting(Graphics2D g) {
+    exporting = true;
+    try {
+      paintScene(g);
+    } finally {
+      exporting = false;
+    }
+  }
+
+  /** while drawing for an export: no grid, no selection, no line being drawn */
+  private boolean exporting;
+
+  private boolean selected(Object o) {
+    return !exporting && app.selection() == o;
+  }
+
+  private void paintScene(Graphics2D g) {
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
     g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
     g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
     Structure s = app.structure();
     Solution sol = app.solution();
-    paintGrid(g);
+    if (!exporting) paintGrid(g);
     if (sol.ok() && app.diagram != MainFrame.Diagram.NONE) paintDiagram(g, sol);
     paintElements(g, s);
     if (sol.ok() && app.showDeformed) paintDeformed(g, sol);
@@ -420,14 +463,13 @@ final class StructureCanvas extends JPanel {
     paintLoads(g, s);
     if (sol.ok() && app.showReactions) paintReactions(g, s, sol);
     paintNodes(g, s);
-    if (chain != null) {
+    if (chain != null && !exporting) {
       double[] p = pointAt(mouseX, mouseY);
       g.setColor(SELECT);
       g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[] {6, 4}, 0));
       g.draw(new Line2D.Double(sx(chain[0]), sy(chain[1]), sx(p[0]), sy(p[1])));
       g.drawString(Fmt.num(Math.hypot(p[0] - chain[0], p[1] - chain[1])) + " m", (float) mouseX + 12, (float) mouseY - 8);
     }
-    g.dispose();
   }
 
   private void paintGrid(Graphics2D g) {
@@ -445,7 +487,7 @@ final class StructureCanvas extends JPanel {
 
   private void paintElements(Graphics2D g, Structure s) {
     for (Element e : s.elements) {
-      boolean sel = app.selection() == e;
+      boolean sel = selected(e);
       g.setColor(sel ? SELECT : Symbols.INK);
       g.setStroke(new BasicStroke(e.isBar() ? 2f : 3.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
       g.draw(new Line2D.Double(sx(e.a.x), sy(e.a.y), sx(e.b.x), sy(e.b.y)));
@@ -461,7 +503,7 @@ final class StructureCanvas extends JPanel {
       double x = sx(n.x), y = sy(n.y);
       g.setColor(Symbols.INK);
       g.fill(new Ellipse2D.Double(x - 3, y - 3, 6, 6));
-      if (app.selection() == n) {
+      if (selected(n)) {
         g.setColor(SELECT);
         g.setStroke(new BasicStroke(2f));
         g.draw(new Ellipse2D.Double(x - 8, y - 8, 16, 16));

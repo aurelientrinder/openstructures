@@ -46,6 +46,21 @@ final class En {
       "restart.language", "The new language applies when the application starts again.\nRestart now? The drawing in progress is kept.",
       "restart.failed", "Could not restart: %s\nPlease start the application again yourself.",
 
+      "menu.export", "Export",
+      "export.png", "Drawing as PNG image…",
+      "export.svg", "Drawing as SVG (vector)…",
+      "export.text", "Results as text…",
+      "export.csv", "Diagrams along the elements as CSV…",
+      "export.pngFilter", "PNG image (*.png)",
+      "export.svgFilter", "SVG drawing (*.svg)",
+      "export.textFilter", "Text (*.txt)",
+      "export.csvFilter", "CSV table (*.csv)",
+      "export.notSolved", "Nothing to export: the structure has no solution.",
+      "export.failed", "Could not export:\n%s",
+      "csv.element", "element",
+      "csv.T", "V (kN)",
+      "csv.M", "M (kN·m)",
+
       // ——— display bar ———
       "display.deformed", "Deformed shape",
       "display.amplify", "Magnification of the deformed shape, on top of the automatic scale",

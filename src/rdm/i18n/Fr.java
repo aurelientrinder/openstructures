@@ -46,6 +46,21 @@ final class Fr {
       "restart.language", "La nouvelle langue s'applique au redémarrage.\nRedémarrer maintenant ? Le dessin en cours est conservé.",
       "restart.failed", "Impossible de redémarrer : %s\nRelancez l'application vous-même.",
 
+      "menu.export", "Exporter",
+      "export.png", "Dessin en image PNG…",
+      "export.svg", "Dessin en SVG (vectoriel)…",
+      "export.text", "Résultats en texte…",
+      "export.csv", "Diagrammes le long des éléments en CSV…",
+      "export.pngFilter", "Image PNG (*.png)",
+      "export.svgFilter", "Dessin SVG (*.svg)",
+      "export.textFilter", "Texte (*.txt)",
+      "export.csvFilter", "Tableau CSV (*.csv)",
+      "export.notSolved", "Rien à exporter : la structure n'a pas de solution.",
+      "export.failed", "Impossible d'exporter :\n%s",
+      "csv.element", "élément",
+      "csv.T", "T (kN)",
+      "csv.M", "Mf (kN·m)",
+
       // ——— display bar ———
       "display.deformed", "Déformée",
       "display.amplify", "Amplification de la déformée, en plus de l'échelle automatique",

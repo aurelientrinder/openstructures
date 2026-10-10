@@ -8,6 +8,7 @@ import java.awt.Font;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -16,6 +17,7 @@ import java.util.Deque;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -238,6 +240,21 @@ public final class MainFrame extends JFrame {
     JMenu ex = new JMenu(tr("menu.examples"));
     Examples.ALL.forEach((name, make) -> ex.add(item(Examples.title(name), 0, () -> load(make.get(), null))));
     f.add(ex);
+    JMenu export = new JMenu(tr("menu.export"));
+    export.add(item(tr("export.png"), 0, () -> export("png", tr("export.pngFilter"), p -> ImageIO.write(canvas.image(2), "png", p.toFile()))));
+    export.add(item(tr("export.svg"), 0, () -> export("svg", tr("export.svgFilter"), p -> Files.writeString(p, canvas.svg(), StandardCharsets.UTF_8))));
+    export.addSeparator();
+    export.add(item(tr("export.text"), 0, () -> export("txt", tr("export.textFilter"),
+        p -> Files.writeString(p, Report.of(structure, solution).replace("\n", System.lineSeparator()), StandardCharsets.UTF_8))));
+    export.add(item(tr("export.csv"), 0, () -> {
+      if (!solution.ok()) {
+        JOptionPane.showMessageDialog(this, tr("export.notSolved"), tr("menu.export"), JOptionPane.WARNING_MESSAGE);
+        return;
+      }
+      // with a byte order mark, so that a spreadsheet reads it as UTF-8 (kN·m)
+      export("csv", tr("export.csvFilter"), p -> Files.writeString(p, "\uFEFF" + Report.csv(solution), StandardCharsets.UTF_8));
+    }));
+    f.add(export);
     f.addSeparator();
     f.add(item(tr("menu.quit"), 0, () -> System.exit(0)));
     bar.add(f);
@@ -416,6 +433,26 @@ public final class MainFrame extends JFrame {
       load(StructureFile.load(p), p);
     } catch (IOException | IllegalArgumentException ex) {
       JOptionPane.showMessageDialog(this, tr("file.openFailed", p.getFileName(), ex.getMessage()), tr("file.open"), JOptionPane.ERROR_MESSAGE);
+    }
+  }
+
+  private interface Writer {
+    void write(Path p) throws IOException;
+  }
+
+  /** Asks where to write a file of this kind (named after the structure's file), then writes it. */
+  private void export(String extension, String filter, Writer writer) {
+    JFileChooser c = new JFileChooser(file == null ? null : file.getParent().toFile());
+    c.setFileFilter(new FileNameExtensionFilter(filter, extension));
+    String name = file == null ? "structure" : file.getFileName().toString().replaceFirst("\\.rdm$", "");
+    c.setSelectedFile(new java.io.File(c.getCurrentDirectory(), name + "." + extension));
+    if (c.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+    Path p = c.getSelectedFile().toPath();
+    if (!p.getFileName().toString().toLowerCase().endsWith("." + extension)) p = p.resolveSibling(p.getFileName() + "." + extension);
+    try {
+      writer.write(p);
+    } catch (IOException ex) {
+      JOptionPane.showMessageDialog(this, tr("export.failed", ex.getMessage()), tr("menu.export"), JOptionPane.ERROR_MESSAGE);
     }
   }
 
