@@ -23,6 +23,7 @@ import rdm.model.NodeLoad;
 import rdm.model.Section;
 import rdm.model.Structure;
 import rdm.model.Support;
+import rdm.solver.Buckling;
 import rdm.solver.ElementResult;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
@@ -56,6 +57,8 @@ public final class Verify {
     splitKeepsLoads();
     combinations();
     envelope();
+    eulerColumns();
+    bucklingOfFrames();
     loadCaseFiles();
     readVersion1();
     examples();
@@ -582,6 +585,143 @@ public final class Verify {
     check("envelope without a combination: no result", Envelope.of(s).ok() ? 1 : 0, 0);
   }
 
+  /**
+   * A vertical column from (0,0) to (0,L) in n elements, rectangle 50 × 100 steel, P down on its head. The head's
+   * roller or slider has its normal along x: it holds the head sideways and lets it go down.
+   */
+  static Structure column(int n, Support foot, Support head) {
+    Structure s = new Structure();
+    Node prev = s.addNode(0, 0);
+    prev.support = foot;
+    for (int i = 1; i <= n; i++) {
+      Node nx = s.addNode(0, L * i / n);
+      s.addElement(prev, nx, false).section = new Section(Section.Kind.RECT, 50, 100, 0);
+      prev = nx;
+    }
+    prev.support = head;
+    prev.supportAngle = 0;
+    prev.loadIn(g(s)).fy = -P;
+    return s;
+  }
+
+  /**
+   * Euler's four cases: Pcr = π²EI/Lf², Lf the buckling length. Each element is cut in 8 for the geometric
+   * stiffness, which puts λcr a little above the exact value (an upper bound): within 0.1 %.
+   */
+  static void eulerColumns() {
+    // fixed-pinned: k L is the root of tan kL = kL between π and 3π/2 (4.4934)
+    double kl = root(x -> Math.tan(x) - x, Math.PI + 1e-9, 1.5 * Math.PI - 1e-9);
+    String[] names = {"pinned-pinned column: Pcr = π²EI/L², Lf = L", "fixed-free column: Pcr = π²EI/4L², Lf = 2L",
+        "fixed-pinned column: Pcr = 20.19 EI/L² (tan kL = kL), Lf = 0.699 L", "fixed-fixed column: Pcr = 4π²EI/L², Lf = L/2"};
+    Support[][] ends = {{Support.PIVOT, Support.APPUI_SIMPLE}, {Support.ENCASTREMENT, Support.NONE}, {Support.ENCASTREMENT, Support.APPUI_SIMPLE},
+        {Support.ENCASTREMENT, Support.GLISSIERE}};
+    double[] lf = {1, 2, Math.PI / kl, 0.5};
+    for (int i = 0; i < 4; i++) {
+      Structure s = column(1, ends[i][0], ends[i][1]);
+      Buckling b = Buckling.of(Solver.solve(s));
+      double pcr = Math.PI * Math.PI * EI(s) / Math.pow(lf[i] * L, 2);
+      check("buckling, " + names[i] + ": solved", b.ok() ? 1 : 0, 1);
+      near("buckling, " + names[i] + ": λcr·P", b.factor() * P, pcr, 1e-3);
+      check("buckling, " + names[i] + ": λcr·P above Pcr (upper bound)", b.factor() * P >= pcr ? 1 : 0, 1);
+      Buckling.Member m = b.of(s.elements.get(0));
+      near("buckling, " + names[i] + ": Lf/L", m.length(b.factor()) / L, lf[i], 1e-3);
+      near("buckling, " + names[i] + ": Ncr = λcr·|N|", m.critical(b.factor()), b.factor() * P, 1e-9);
+    }
+
+    Structure pinned = column(1, Support.PIVOT, Support.APPUI_SIMPLE);
+    Buckling b = Buckling.of(Solver.solve(pinned));
+    double euler = Math.PI * Math.PI * EI(pinned) / (L * L);
+    near("buckling, pinned-pinned column: mode 2 at 4π²EI/L²", b.modes.get(1).factor * P, 4 * euler, 1e-3);
+    near("buckling, pinned-pinned column: mode 3 at 9π²EI/L²", b.modes.get(2).factor * P, 9 * euler, 3e-3);
+    Element e = pinned.elements.get(0);
+    Buckling.Mode one = b.modes.get(0);
+    near("buckling, pinned-pinned column: mode 1 is sin(πy/L), at L/4", one.displacement(e, L / 4)[0] / one.displacement(e, L / 2)[0],
+        Math.sin(Math.PI / 4), 1e-3);
+    near("buckling, pinned-pinned column: mode 1 largest at mid-height, at 1", one.displacement(e, L / 2)[0], 1, 1e-9);
+    check("buckling, pinned-pinned column: mode 1 sideways only", Math.abs(one.displacement(e, L / 3)[1]), 0);
+    near("buckling, pinned-pinned column: Euler's load of the element π²EI/L²", b.of(e).euler(), euler, 1e-12);
+    near("buckling, fixed-free column: mode 2 at 9π²EI/4L²", Buckling.of(Solver.solve(column(1, Support.ENCASTREMENT, Support.NONE))).modes.get(1).factor * P,
+        9 * euler / 4, 1e-3);
+    near("buckling, pinned-pinned column in 3 elements: π²EI/L²", Buckling.of(Solver.solve(column(3, Support.PIVOT, Support.APPUI_SIMPLE))).factor() * P,
+        euler, 1e-4);
+
+    // a load case and a combination of it: λcr is the case's over the factor
+    Structure k = column(1, Support.PIVOT, Support.APPUI_SIMPLE);
+    k.addCombination("1.5 G").setFactor(g(k), 1.5);
+    near("buckling, combination 1.5 G: λcr = λcr(G) / 1.5", Buckling.of(Solver.solve(k, k.combinations.get(0).loading())).factor(),
+        Buckling.of(Solver.solve(k, Loading.of(g(k)))).factor() / 1.5, 1e-9);
+
+    // a rigid column on a pin, held at its head by a spring of stiffness k: it tips over at Pcr = kL (< π²EI/L²)
+    double spring = 0.2 * euler / L;
+    Structure tip = column(1, Support.PIVOT, Support.ELASTIQUE);
+    tip.nodes.get(1).supportAngle = 90;
+    tip.nodes.get(1).springT = spring;
+    near("buckling, pinned column held by a spring at its head: Pcr = kL", Buckling.of(Solver.solve(tip)).factor() * P, spring * L, 1e-6);
+
+    Structure pulled = column(1, Support.PIVOT, Support.APPUI_SIMPLE);
+    load(pulled, 1).fy = P;
+    check("buckling, column in traction: nothing to buckle", Buckling.of(Solver.solve(pulled)).status == Buckling.Status.NO_COMPRESSION ? 1 : 0, 1);
+    Structure bent = beam(1);
+    node(bent, 0).support = Support.ENCASTREMENT;
+    load(bent, 1).fy = -P;
+    check("buckling, cantilever bent only: nothing to buckle", Buckling.of(Solver.solve(bent)).status == Buckling.Status.NO_COMPRESSION ? 1 : 0, 1);
+    Structure loose = column(1, Support.APPUI_SIMPLE, Support.NONE);
+    check("buckling, mechanism: no buckling", Buckling.of(Solver.solve(loose)).status == Buckling.Status.NOT_SOLVED ? 1 : 0, 1);
+  }
+
+  /** Portal frames (Timoshenko & Gere, 2.8) and a truss whose bars buckle one by one. */
+  static void bucklingOfFrames() {
+    // h = l, every member the same I, P on the head of each column: the frame sways
+    double h = L;
+    for (boolean fixed : new boolean[] {true, false}) {
+      Structure s = new Structure();
+      Node a = s.addNode(0, 0), b = s.addNode(0, h), c = s.addNode(h, h), d = s.addNode(h, 0);
+      a.support = d.support = fixed ? Support.ENCASTREMENT : Support.PIVOT;
+      for (Node[] ends : new Node[][] {{a, b}, {b, c}, {c, d}}) s.addElement(ends[0], ends[1], false).section = new Section(Section.Kind.RECT, 50, 100, 0);
+      b.loadIn(g(s)).fy = c.loadIn(g(s)).fy = -P;
+      Buckling bk = Buckling.of(Solver.solve(s));
+      // fixed feet: kh / tan kh = −6 (I_b h / I_c l); pinned feet: kh tan kh = 6 (I_b h / I_c l)
+      double kh = fixed ? root(x -> x / Math.tan(x) + 6, Math.PI / 2 + 1e-9, Math.PI - 1e-9) : root(x -> x * Math.tan(x) - 6, 1e-9, Math.PI / 2 - 1e-9);
+      String name = fixed ? "portal frame, fixed feet: sway at kh/tan kh = −6 (kh = 2.716)" : "portal frame, pinned feet: sway at kh·tan kh = 6 (kh = 1.350)";
+      near("buckling, " + name, bk.factor() * P, kh * kh * EI(s) / (h * h), 1e-3);
+      Buckling.Mode one = bk.modes.get(0);
+      check("buckling, " + name + ": the beam sways, both heads alike", Math.abs(one.displacement(s.elements.get(1), 0)[0] - one.displacement(s.elements.get(1), h)[0]),
+          0);
+      check("buckling, " + name + ": the beam is not compressed", bk.of(s.elements.get(1)).compressed() ? 1 : 0, 0);
+    }
+
+    // the two-bar truss: both bars compressed by P/(2 sin α), each buckles alone between its hinges at π²EI/l²
+    double a = 3, b = 2;
+    Structure s = new Structure();
+    Node l = s.addNode(-a, 0), top = s.addNode(0, b), r = s.addNode(a, 0);
+    l.support = r.support = Support.PIVOT;
+    top.loadIn(g(s)).fy = -P;
+    s.addElement(l, top, true);
+    s.addElement(top, r, true);
+    Buckling bk = Buckling.of(Solver.solve(s));
+    double len = Math.hypot(a, b), sin = b / len;
+    Element bar = s.elements.get(0);
+    double ncr = Math.PI * Math.PI * bar.material.pascals() * bar.section.inertia() / (len * len);
+    near("buckling, two-bar truss: each bar alone, P·λcr/(2 sin α) = π²EI/l²", bk.factor() * P / (2 * sin), ncr, 1e-3);
+    near("buckling, two-bar truss: Lf of a bar = its length", bk.of(bar).length(bk.factor()), len, 1e-3);
+    near("buckling, two-bar truss: mode 2 the other bar, at the same λcr", bk.modes.get(1).factor, bk.factor(), 1e-6);
+    check("buckling, two-bar truss: the apex does not move", Math.hypot(bk.modes.get(0).displacement(bar, len)[0], bk.modes.get(0).displacement(bar, len)[1]), 0);
+  }
+
+  /** The root of f between lo and hi, where f changes sign once (bisection). */
+  static double root(java.util.function.DoubleUnaryOperator f, double lo, double hi) {
+    double flo = f.applyAsDouble(lo);
+    for (int i = 0; i < 200; i++) {
+      double m = (lo + hi) / 2, fm = f.applyAsDouble(m);
+      if (flo * fm <= 0) hi = m;
+      else {
+        lo = m;
+        flo = fm;
+      }
+    }
+    return (lo + hi) / 2;
+  }
+
   /** Cases and combinations in a file, by name; an older file in one case; a case removed with its loads. */
   static void loadCaseFiles() {
     Structure s = withCases();
@@ -760,6 +900,17 @@ public final class Verify {
     Matcher m = Pattern.compile("%[-#+ 0,(]*\\d*(\\.\\d+)?[a-zA-Z%]").matcher(text);
     while (m.find()) out.add(m.group());
     return out;
+  }
+
+  /** got within a relative tolerance of expected. */
+  static void near(String what, double got, double expected, double tolerance) {
+    checks++;
+    if (Math.abs(got - expected) <= tolerance * Math.abs(expected)) {
+      System.out.printf("ok     %s%n", what);
+    } else {
+      failures++;
+      System.out.printf("FAIL   %s: got %.12g, expected %.12g (± %.1g)%n", what, got, expected, tolerance);
+    }
   }
 
   static void check(String what, double got, double expected) {

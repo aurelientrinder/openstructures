@@ -71,17 +71,7 @@ public final class Solver {
       sol.add(new ElementResult(e, a, b, weight, loading));
     }
 
-    // support frames: columns t and n, u_global = R u_frame
-    double[][] frame = new double[n][];
-    for (int i = 0; i < n; i++) {
-      Node nd = st.nodes.get(i);
-      if (nd.support.skewed()) {
-        double th = Math.toRadians(nd.supportAngle), nx = Math.cos(th), ny = Math.sin(th);
-        frame[i] = new double[] {ny, -nx, nx, ny};
-      } else {
-        frame[i] = new double[] {1, 0, 0, 1};
-      }
-    }
+    double[][] frame = frames(st);
 
     int N = 3 * n;
     double[][] K = new double[N][N];
@@ -233,11 +223,26 @@ public final class Solver {
     return sol;
   }
 
+  /** Each node's support frame, columns t and n: u_global = R u_frame ({1, 0, 0, 1} unless the support is skewed). */
+  static double[][] frames(Structure st) {
+    double[][] frame = new double[st.nodes.size()][];
+    for (int i = 0; i < frame.length; i++) {
+      Node nd = st.nodes.get(i);
+      if (nd.support.skewed()) {
+        double th = Math.toRadians(nd.supportAngle), nx = Math.cos(th), ny = Math.sin(th);
+        frame[i] = new double[] {ny, -nx, nx, ny};
+      } else {
+        frame[i] = new double[] {1, 0, 0, 1};
+      }
+    }
+    return frame;
+  }
+
   /**
    * From the end nodes' unknowns (in their support frames) to the element's local end displacements:
    * per node, the rotation to local axes [c s; −s c] times the frame [t n].
    */
-  private static double[][] transform(ElementResult r, double[] Ra, double[] Rb) {
+  static double[][] transform(ElementResult r, double[] Ra, double[] Rb) {
     double[][] G = new double[6][6];
     for (int end = 0; end < 2; end++) {
       double[] R = end == 0 ? Ra : Rb;
