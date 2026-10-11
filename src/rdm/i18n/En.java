@@ -82,7 +82,8 @@ final class En {
 
       // ——— display bar ———
       "display.deformed", "Deformed shape",
-      "display.amplify", "Magnification of the deformed shape, on top of the automatic scale",
+      "display.amplify", "Scale of the deformed shape: 1 draws the displacements at their true size, 100 a hundred times larger; Auto picks one where they show",
+      "display.auto", "Auto",
       "display.diagram", "Diagram: ",
       "display.reactions", "Reactions",
       "display.numbers", "Numbers",
@@ -423,6 +424,7 @@ final class En {
       "canvas.readElement", "Element %d, x = %s {L}: N = %s, V = %s, M = %s, displacement = %s",
       "canvas.selfWeight", "Self-weight included",
       "canvas.deformed", "Deformed shape × %s",
+      "canvas.deformedAuto", " (automatic scale)",
       "canvas.envelope", "%s, envelope: max %s, min %s",
       "canvas.readEnvelope", "Element %d, x = %s {L}: N from %s to %s, V from %s to %s, M from %s to %s",
       "canvas.buckling", "Buckling mode %d: λcr = %s",

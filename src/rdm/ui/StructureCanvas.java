@@ -1003,9 +1003,11 @@ final class StructureCanvas extends JPanel {
 
   private void paintDeformed(Graphics2D g, Solution sol) {
     if (sol.maxDisplacement == 0) return;
+    // the scale chosen, else one where the largest displacement is 8 % of the structure's size (whatever that size)
     double[] b = app.structure().bounds();
-    double size = Math.max(Math.hypot(b[2] - b[0], b[3] - b[1]), 1);
-    double k = nice(0.08 * size / sol.maxDisplacement) * app.amplify;
+    double size = Math.hypot(b[2] - b[0], b[3] - b[1]);
+    boolean auto = app.deformedScale <= 0;
+    double k = auto ? nice(0.08 * size / sol.maxDisplacement) : app.deformedScale;
     g.setColor(DEFORMED);
     g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[] {7, 4}, 0));
     for (ElementResult r : sol.elements) {
@@ -1021,7 +1023,7 @@ final class StructureCanvas extends JPanel {
       g.draw(p);
     }
     g.setFont(g.getFont().deriveFont(Font.BOLD));
-    g.drawString(tr("canvas.deformed", Fmt.num(k)), 12, getHeight() - 12);
+    g.drawString(tr("canvas.deformed", Fmt.num(k)) + (auto ? tr("canvas.deformedAuto") : ""), 12, getHeight() - 12);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 
@@ -1039,7 +1041,8 @@ final class StructureCanvas extends JPanel {
       return;
     }
     double[] b = app.structure().bounds();
-    double k = 0.1 * Math.max(Math.hypot(b[2] - b[0], b[3] - b[1]), 1) * app.amplify;
+    // a mode's amplitude means nothing: its largest displacement drawn a tenth of the structure's size
+    double k = 0.1 * Math.hypot(b[2] - b[0], b[3] - b[1]);
     g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
     for (ElementResult r : bk.solution.elements) {
       Path2D p = new Path2D.Double();

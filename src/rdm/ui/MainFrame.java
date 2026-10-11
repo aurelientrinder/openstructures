@@ -33,13 +33,11 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
-import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JToggleButton;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
-import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import rdm.Settings;
@@ -99,7 +97,8 @@ public final class MainFrame extends JFrame {
   Diagram diagram = Diagram.M;
   /** the buckling mode drawn, from 1; 0: no buckling */
   int bucklingMode;
-  double amplify = 1;
+  /** the deformed shape's scale: displacements drawn this many times their size; 0 chooses one where they show */
+  double deformedScale;
   double grid = 0.5;
 
   final StructureCanvas canvas = new StructureCanvas(this);
@@ -750,11 +749,26 @@ public final class MainFrame extends JFrame {
     });
     bar.add(deformed);
     bar.add(new JLabel(" ×"));
-    JSpinner amp = new JSpinner(new SpinnerNumberModel(1.0, 0.1, 100.0, 0.5));
+    // the scale itself (1: true size), or Auto; another number may be typed in
+    JComboBox<String> amp = new JComboBox<>(new String[] {tr("display.auto"), "1", "10", "100", "1000", "10000"});
+    amp.setEditable(true);
     amp.setToolTipText(tr("display.amplify"));
-    amp.setMaximumSize(new Dimension(70, 26));
-    amp.addChangeListener(e -> {
-      amplify = (Double) amp.getValue();
+    amp.setMaximumSize(new Dimension(90, 26));
+    amp.addActionListener(e -> {
+      Object v = amp.getSelectedItem();
+      if (v == null || v.toString().strip().equals(tr("display.auto"))) {
+        deformedScale = 0;
+      } else {
+        try {
+          double k = Fmt.parse(v.toString());
+          if (!(k > 0) || Double.isInfinite(k)) throw new NumberFormatException();
+          deformedScale = k;
+        } catch (NumberFormatException ex) {
+          java.awt.Toolkit.getDefaultToolkit().beep();
+          amp.setSelectedItem(deformedScale > 0 ? Fmt.field(deformedScale) : tr("display.auto"));
+          return;
+        }
+      }
       canvas.repaint();
     });
     bar.add(amp);

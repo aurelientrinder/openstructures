@@ -82,7 +82,8 @@ final class Fr {
 
       // ——— display bar ———
       "display.deformed", "Déformée",
-      "display.amplify", "Amplification de la déformée, en plus de l'échelle automatique",
+      "display.amplify", "Échelle de la déformée : 1 dessine les déplacements en vraie grandeur, 100 cent fois plus grands ; Auto en choisit une où ils se voient",
+      "display.auto", "Auto",
       "display.diagram", "Diagramme : ",
       "display.reactions", "Réactions",
       "display.numbers", "Numéros",
@@ -423,6 +424,7 @@ final class Fr {
       "canvas.readElement", "Élément %d, x = %s {L} : N = %s, T = %s, Mf = %s, déplacement = %s",
       "canvas.selfWeight", "Poids propre inclus",
       "canvas.deformed", "Déformée × %s",
+      "canvas.deformedAuto", " (échelle automatique)",
       "canvas.envelope", "%s, enveloppe : max %s, min %s",
       "canvas.readEnvelope", "Élément %d, x = %s {L} : N de %s à %s, T de %s à %s, Mf de %s à %s",
       "canvas.buckling", "Mode de flambement %d : λc = %s",
