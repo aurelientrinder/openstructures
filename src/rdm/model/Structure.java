@@ -17,7 +17,10 @@ public final class Structure {
   public static final double G = 9.81;
 
   /** Partial factors of EN 1990 (6.10): permanent actions, unfavourable; variable ones; ψ0 of imposed loads in buildings. */
-  public static final double GAMMA_G = 1.35, GAMMA_Q = 1.5, PSI0_GAMMA_Q = 1.05;
+  public static final double GAMMA_G = 1.35, GAMMA_Q = 1.5, PSI0_GAMMA_Q = 1.05, PSI0 = 0.7;
+
+  /** the deflection checks' limit: an element's deflection at most its span over this (L/300) */
+  public double deflectionLimit = 300;
 
   /** A structure with one permanent load case, G. */
   public Structure() {
@@ -49,20 +52,26 @@ public final class Structure {
   }
 
   /**
-   * Adds the usual ultimate limit state combinations (EN 1990, 6.10), named by their formula, unless one with the
-   * same factors is already there: with G every permanent case and Qi each variable one, 1.35 G + 1.5 Qi + 1.05 Qj…
-   * (Qi leading, the others accompanying with ψ0 = 0.7), and G + 1.5 Qi (the permanent actions favourable); 1.35 G
-   * alone when nothing is variable. Returns how many were added.
+   * Adds the usual combinations of EN 1990, named by their formula, unless one with the same limit state and
+   * factors is already there. With G every permanent case and Qi each variable one: at the ultimate limit state
+   * (6.10), 1.35 G + 1.5 Qi + 1.05 Qj… (Qi leading, the others accompanying with ψ0 = 0.7) and G + 1.5 Qi (the
+   * permanent actions favourable); at the serviceability limit state, characteristic (6.14b), G + Qi + 0.7 Qj….
+   * With nothing variable, 1.35 G and G. Returns how many were added.
    */
   public int generateCombinations() {
     List<LoadCase> variable = cases.stream().filter(c -> c.type == LoadCase.Type.VARIABLE).toList();
     List<Combination> made = new ArrayList<>();
     if (variable.isEmpty()) {
-      made.add(combination(GAMMA_G, null, 0));
+      made.add(combination(GAMMA_G, null, 1, 0));
+      made.add(combination(1, null, 1, 0));
     } else {
-      for (LoadCase lead : variable) made.add(combination(GAMMA_G, lead, PSI0_GAMMA_Q));
-      for (LoadCase lead : variable) made.add(combination(1, lead, 0));
+      for (LoadCase lead : variable) made.add(combination(GAMMA_G, lead, GAMMA_Q, PSI0_GAMMA_Q));
+      for (LoadCase lead : variable) made.add(combination(1, lead, GAMMA_Q, 0));
+      for (LoadCase lead : variable) made.add(combination(1, lead, 1, PSI0));
     }
+    // the serviceability ones are the last of each list
+    int sls = variable.isEmpty() ? 1 : 2 * variable.size();
+    for (int i = sls; i < made.size(); i++) made.get(i).limit = Combination.Limit.SLS;
     int added = 0;
     for (Combination k : made) {
       if (combinations.stream().anyMatch(o -> o.sameFactors(k, this))) continue;
@@ -73,13 +82,18 @@ public final class Structure {
     return added;
   }
 
-  /** Permanent cases at g, the leading variable case at 1.5, the other variable ones at accompanying. */
-  private Combination combination(double g, LoadCase lead, double accompanying) {
+  /** Permanent cases at g, the leading variable case at q, the other variable ones at accompanying. */
+  private Combination combination(double g, LoadCase lead, double q, double accompanying) {
     Combination k = new Combination("");
     for (LoadCase c : cases) {
-      k.setFactor(c, c.type == LoadCase.Type.PERMANENT ? g : c == lead ? GAMMA_Q : accompanying);
+      k.setFactor(c, c.type == LoadCase.Type.PERMANENT ? g : c == lead ? q : accompanying);
     }
     return k;
+  }
+
+  /** The combinations for one limit state. */
+  public List<Combination> combinations(Combination.Limit limit) {
+    return combinations.stream().filter(k -> k.limit == limit).toList();
   }
 
   /** The number of a case, from 1. */
@@ -134,6 +148,8 @@ public final class Structure {
     Node n = addNode(e.a.x + t * (e.b.x - e.a.x), e.a.y + t * (e.b.y - e.a.y));
     Element second = new Element(n, e.b, e.section);
     second.material = e.material;
+    second.grade = e.grade;
+    second.bucklingFactor = e.bucklingFactor;
     second.hingeB = e.hingeB;
     // a truss bar cut in two stays two truss bars
     second.hingeA = e.isBar();

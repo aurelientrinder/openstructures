@@ -11,10 +11,14 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import rdm.i18n.Tr;
+import rdm.design.Design;
+import rdm.design.SteelSection;
 import rdm.io.StructureFile;
+import rdm.model.Combination;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 import rdm.model.Examples;
+import rdm.model.Grade;
 import rdm.model.LoadCase;
 import rdm.model.Loading;
 import rdm.model.Material;
@@ -64,6 +68,7 @@ public final class Verify {
     examples();
     roundTrip();
     sections();
+    design();
     texts();
     System.out.printf("%d checks, %d failure(s)%n", checks, failures);
     if (failures > 0) System.exit(1);
@@ -488,17 +493,19 @@ public final class Verify {
   static void combinations() {
     Structure s = withCases();
     LoadCase g = s.cases.get(0), q = s.cases.get(1), w = s.cases.get(2);
-    check("generated combinations: 4", s.combinations.size(), 4);
-    double[][] expected = {{1.35, 1.5, 1.05}, {1.35, 1.05, 1.5}, {1, 1.5, 0}, {1, 0, 1.5}};
-    for (int i = 0; i < 4; i++) {
+    check("generated combinations: 6", s.combinations.size(), 6);
+    double[][] expected = {{1.35, 1.5, 1.05}, {1.35, 1.05, 1.5}, {1, 1.5, 0}, {1, 0, 1.5}, {1, 1, 0.7}, {1, 0.7, 1}};
+    for (int i = 0; i < 6; i++) {
       var k = s.combinations.get(i);
       check("combination " + (i + 1) + ": EN 1990 factors", Math.abs(k.factor(g) - expected[i][0]) + Math.abs(k.factor(q) - expected[i][1])
           + Math.abs(k.factor(w) - expected[i][2]), 0);
+      check("combination " + (i + 1) + ": " + (i < 4 ? "ULS" : "SLS"), k.limit == (i < 4 ? Combination.Limit.ULS : Combination.Limit.SLS) ? 1 : 0, 1);
     }
     check("combinations generated twice: nothing more", s.generateCombinations(), 0);
     Structure onlyG = beam(1);
     onlyG.generateCombinations();
-    check("no variable load: 1.35 G", onlyG.combinations.size() == 1 && onlyG.combinations.get(0).factor(g(onlyG)) == 1.35 ? 1 : 0, 1);
+    check("no variable load: 1.35 G (ULS) and G (SLS)", onlyG.combinations.size() == 2 && onlyG.combinations.get(0).factor(g(onlyG)) == 1.35
+        && onlyG.combinations.get(1).factor(g(onlyG)) == 1 && onlyG.combinations.get(1).limit == Combination.Limit.SLS ? 1 : 0, 1);
 
     List<Solution> alone = s.cases.stream().map(c -> Solver.solve(s, Loading.of(c))).toList();
     for (var k : s.combinations) {
@@ -733,11 +740,26 @@ public final class Verify {
     s.combinations.get(1).name = "ELU vent dominant";
     String once = StructureFile.write(s);
     Structure back = StructureFile.read(once);
-    check("file version 4: read back identical", StructureFile.write(back).equals(once) ? 1 : 0, 1);
-    check("file version 4: 3 cases, 4 combinations", back.cases.size() * 10 + back.combinations.size(), 34);
-    check("file version 4: name with spaces", back.combinations.get(1).name.equals("ELU vent dominant") ? 1 : 0, 1);
-    check("file version 4: same reaction for a combination", Solver.solve(back, back.combinations.get(1).loading()).reaction[0][1],
+    check("file: read back identical", StructureFile.write(back).equals(once) ? 1 : 0, 1);
+    check("file: 3 cases, 6 combinations", back.cases.size() * 10 + back.combinations.size(), 36);
+    check("file: name with spaces", back.combinations.get(1).name.equals("ELU vent dominant") ? 1 : 0, 1);
+    check("file: a serviceability combination", back.combinations.get(5).limit == Combination.Limit.SLS ? 1 : 0, 1);
+    check("file: same reaction for a combination", Solver.solve(back, back.combinations.get(1).loading()).reaction[0][1],
         Solver.solve(s, s.combinations.get(1).loading()).reaction[0][1]);
+
+    s.elements.get(0).grade = Grade.S355;
+    s.elements.get(0).bucklingFactor = 0.7;
+    s.deflectionLimit = 250;
+    back = StructureFile.read(StructureFile.write(s));
+    check("file: grade, buckling length, deflection limit", back.elements.get(0).grade == Grade.S355 && back.elements.get(0).bucklingFactor == 0.7
+        && back.elements.get(1).grade == Grade.S235 && back.elements.get(1).bucklingFactor == 0 && back.deflectionLimit == 250 ? 1 : 0, 1);
+
+    Structure v4 = StructureFile.read("RDM 4\ncase PERMANENT 0 G\ncase VARIABLE 0 Q\ncombination 1.35 1.5 ELU 1\nnode 0.0 0.0 ENCASTREMENT 90.0 0.0 0.0 0.0\n"
+        + "node 2.0 0.0 NONE 90.0 0.0 0.0 0.0\nelem 1 2 0 0 IPE 200.0 0.0 0.0 0.0 0 210000.0 7850.0\n");
+    check("file version 4: a combination, ULS, its name and factors", v4.combinations.size() == 1 && v4.combinations.get(0).limit == Combination.Limit.ULS
+        && v4.combinations.get(0).name.equals("ELU 1") && v4.combinations.get(0).factor(v4.cases.get(1)) == 1.5 ? 1 : 0, 1);
+    check("file version 4: S235, buckling length auto, L/300", v4.elements.get(0).grade == Grade.S235 && v4.elements.get(0).bucklingFactor == 0
+        && v4.deflectionLimit == 300 ? 1 : 0, 1);
 
     Structure v3 = StructureFile.read("RDM 3\nselfweight 1\nnode 0.0 0.0 ENCASTREMENT 90.0 0.0 0.0 0.0 0.0 0.002 0.0 0.0 0.0 0.0\n"
         + "node 2.0 0.0 NONE 90.0 0.0 -1000.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\nelem 1 2 0 0 RECT 50.0 100.0 0.0 0.0 0 70000.0 2700.0\n"
@@ -776,6 +798,132 @@ public final class Verify {
   }
 
   /** The templates' area, inertia and extreme fibre, against the textbook formulas (mm, then SI). */
+  /**
+   * The design checks: the steel sections' W_pl, A_v and class against the tables, a beam's bending and shear and
+   * its deflection, a column's buckling (χ), a sway frame's buckling lengths, class 4, the limit states taken.
+   */
+  static void design() {
+    // W_pl and A_v as tabulated (ArcelorMittal; EN 10210-2 for the hollow ones), cm³ and cm²
+    Object[][] table = {{new Section(Section.Kind.IPE, 200, 0, 0), 220.6, 14.0}, {new Section(Section.Kind.IPE, 600, 0, 0), 3512.0, 83.78},
+        {new Section(Section.Kind.HEA, 200, 0, 0), 429.5, 18.08}, {new Section(Section.Kind.HEB, 300, 0, 0), 1869.0, 47.43},
+        {new Section(Section.Kind.IPE, 200, 0, 0, 0, true), 44.61, Double.NaN}, {new Section(Section.Kind.UPN, 200, 0, 0), 228.0, Double.NaN},
+        {new Section(Section.Kind.SHS, 100, 5, 0), 66.4, Double.NaN}, {new Section(Section.Kind.CHS, 114.3, 6.3, 0), 73.6, Double.NaN}};
+    for (Object[] row : table) {
+      Section sec = (Section) row[0];
+      SteelSection st = new SteelSection(sec);
+      near(sec.label() + ": W_pl as tabulated", st.Wpl * 1e6, (Double) row[1], 6e-3);
+      if (!Double.isNaN((Double) row[2])) near(sec.label() + ": A_v as tabulated", st.Av * 1e4, (Double) row[2], 3e-3);
+    }
+    // hot-finished RHS: the slices give back the A and I of the catalogue (EN 10210-2 Annex A)
+    Section rhs = new Section(Section.Kind.RHS, 200, 100, 8, 0, false);
+    SteelSection rhsSteel = new SteelSection(rhs);
+    near("RHS 200 × 100 × 8: W_pl 282 cm³ (Annex A)", rhsSteel.Wpl * 1e6, 282, 2e-3);
+    near("RHS 200 × 100 × 8: W_el from the catalogue's I", rhsSteel.Wel * 1e6, 223.4, 1e-3);
+
+    SteelSection ipe600 = new SteelSection(new Section(Section.Kind.IPE, 600, 0, 0));
+    check("IPE 600 S235: class 1 in bending", ipe600.classify(0, 100e3, 235e6), 1);
+    check("IPE 600 S235: class 4 in compression", ipe600.classify(-100e3, 0, 235e6), 4);
+    check("IPE 600 S235: class 1 in traction", ipe600.classify(100e3, 0, 235e6), 1);
+    SteelSection ipe200 = new SteelSection(new Section(Section.Kind.IPE, 200, 0, 0));
+    // its web, c / t = 159 / 5.6 = 28.4: within 33 ε in S235, between 33 ε and 38 ε in S355
+    check("IPE 200 S235: class 1 in compression", ipe200.classify(-100e3, 0, 235e6), 1);
+    check("IPE 200 S355: class 2 in compression", ipe200.classify(-100e3, 0, 355e6), 2);
+    check("CHS 114.3 × 6.3: class 1", new SteelSection(new Section(Section.Kind.CHS, 114.3, 6.3, 0)).classify(-100e3, 0, 355e6), 1);
+    check("tube 100 × 1: class 4 (d/t = 100 > 90 ε²)", new SteelSection(new Section(Section.Kind.TUBE, 100, 1, 0)).classify(-1e3, 0, 235e6), 4);
+    check("S355 above 40 mm: 335 MPa", Grade.S355.fy(41), 335);
+
+    // a simply supported IPE 200, 6 m, in two elements, 10 kN/m, no combination: M = 45 kN·m, V = 30 kN, δ = 5 q L⁴ / 384 EI
+    Structure s = new Structure();
+    Node a = s.addNode(0, 0), m = s.addNode(3, 0), b = s.addNode(6, 0);
+    a.support = Support.PIVOT;
+    b.support = Support.APPUI_SIMPLE;
+    for (Element e : List.of(s.addElement(a, m, false), s.addElement(m, b, false))) uniform(s, e, -10e3);
+    Design d = Design.of(s);
+    check("beam: the loads as given for both limit states", !d.ulsGiven && !d.slsGiven && d.uls.size() == 1 && d.sls.size() == 1 ? 1 : 0, 1);
+    Design.Member left = d.of(s.elements.get(0));
+    near("beam: M/Mc = 45 kN·m / (W_pl 235 MPa)", left.worst(Design.Check.BENDING).ratio, 45e3 / (ipe200.Wpl * 235e6), 1e-6);
+    near("beam: V/Vpl = 30 kN / (A_v 235 / √3 MPa)", left.worst(Design.Check.SHEAR).ratio, 30e3 / (ipe200.Av * 235e6 / Math.sqrt(3)), 1e-6);
+    check("beam: no N, no buckling", left.worst(Design.Check.AXIAL).ratio + (left.worst(Design.Check.BUCKLING).found() ? 1 : 0), 0);
+    check("beam: governed by bending (with N = 0, the same)", left.ratio(), left.worst(Design.Check.BENDING).ratio);
+    check("beam: one span of two elements", d.spans.size() == 1 && d.spans.get(0).elements.size() == 2 && !d.spans.get(0).cantilever ? 1 : 0, 1);
+    double EI = Material.STEEL.pascals() * s.elements.get(0).section.inertia();
+    near("beam: deflection 5 q L⁴ / 384 EI, at mid-span", Math.abs(d.spans.get(0).deflection), 5 * 10e3 * Math.pow(6, 4) / (384 * EI), 1e-9);
+    near("beam: where it is largest, 3 m", d.spans.get(0).at, 3, 1e-9);
+    near("beam: allowed L/300 = 20 mm", d.spans.get(0).allowed, 0.02, 1e-12);
+    s.elements.get(0).material = Material.PRESETS.get(1);
+    check("aluminium: not checked", Design.of(s).of(s.elements.get(0)).checked() ? 1 : 0, 0);
+
+    // a cantilever, 2 m, P at its tip: P L³ / 3 EI, allowed 2 L / 300
+    Structure c = new Structure();
+    Node root = c.addNode(0, 0), tip = c.addNode(2, 0);
+    root.support = Support.ENCASTREMENT;
+    c.addElement(root, tip, false);
+    c.nodes.get(1).loadIn(g(c)).fy = -5e3;
+    Design dc = Design.of(c);
+    Design.Span arm = dc.spans.get(0);
+    near("cantilever: P L³ / 3 EI at its tip", Math.abs(arm.deflection), 5e3 * 8 / (3 * Material.STEEL.pascals() * c.elements.get(0).section.inertia()), 1e-9);
+    check("cantilever: from its fixed end, allowed 2 L / 300", arm.cantilever && arm.from == root && Math.abs(arm.allowed - 4.0 / 300) < 1e-12 ? 1 : 0, 1);
+
+    // Euler's column: tube 60 × 4 (curve c), 3 m, 40 kN; with L_cr = L, then from the structure's buckling
+    Structure col = Examples.ALL.get("eulerColumn").get();
+    Element tube = col.elements.get(0);
+    tube.bucklingFactor = 1;
+    Design dk = Design.of(col);
+    SteelSection ts = new SteelSection(tube.section);
+    double Ncr = Math.PI * Math.PI * Material.STEEL.pascals() * tube.section.inertia() / 9, Npl = ts.A * 235e6, lambda = Math.sqrt(Npl / Ncr);
+    double phi = 0.5 * (1 + 0.49 * (lambda - 0.2) + lambda * lambda), chi = 1 / (phi + Math.sqrt(phi * phi - lambda * lambda));
+    Design.Worst w = dk.of(tube).worst(Design.Check.BUCKLING);
+    near("column: λ̄ = √(A fy / Ncr) = 1.609", w.slenderness, 1.609, 1e-3);
+    near("column: χ, curve c", w.chi, chi, 1e-9);
+    near("column: χ = 0.2816 (λ̄ 1.609, curve c)", w.chi, 0.2816, 1e-3);
+    near("column: N Ed / (χ A fy)", w.ratio, 40e3 / (chi * Npl), 1e-9);
+    tube.bucklingFactor = 0;
+    near("column: L_cr from the buckling analysis, the same", Design.of(col).of(tube).worst(Design.Check.BUCKLING).ratio, 40e3 / (chi * Npl), 1e-3);
+
+    // the sway portal: each column's buckling length more than its height (sway), taken from the structure's mode
+    Structure portal = Examples.ALL.get("bucklingPortal").get();
+    Design dp = Design.of(portal);
+    Design.Worst column = dp.of(portal.elements.get(0)).worst(Design.Check.BUCKLING);
+    check("sway portal: the column's L_cr above its height", column.found() && column.Lcr > 4 * 1.05 ? 1 : 0, 1);
+    check("sway portal: λcr = 4 gives the column's N_cr", Buckling.of(dp.ulsSolutions.get(0)).factor() * -column.N, column.Ncr);
+
+    // the Warren truss: its bars buckle between their nodes at most (L_cr ≤ L), and do not bend (no span)
+    Structure truss = Examples.ALL.get("warren").get();
+    Design dt = Design.of(truss);
+    boolean within = true;
+    int compressed = 0;
+    for (Element e : truss.elements) {
+      Design.Worst wb = dt.of(e).worst(Design.Check.BUCKLING);
+      if (!wb.found()) continue;
+      compressed++;
+      within &= wb.Lcr <= e.length() * (1 + 1e-9);
+    }
+    check("truss: every compressed bar's L_cr at most its length", compressed > 0 && within ? 1 : 0, 1);
+    check("truss: no span (bars only)", dt.spans.size(), 0);
+
+    // an IPE 600 strut: class 4 in compression, not checked
+    Structure strut = Examples.ALL.get("eulerColumn").get();
+    strut.elements.get(0).section = new Section(Section.Kind.IPE, 600, 0, 0);
+    check("IPE 600 strut S235: class 4, not checked", Double.isNaN(Design.of(strut).of(strut.elements.get(0)).ratio()) ? 1 : 0, 1);
+
+    // the portal with cases: its 4 ULS combinations for the strength, its 2 SLS ones for the deflections
+    Structure pc = Examples.ALL.get("portalCases").get();
+    Design dpc = Design.of(pc);
+    check("cases: 4 ULS and 2 SLS combinations taken", dpc.ulsGiven && dpc.slsGiven && dpc.uls.size() == 4 && dpc.sls.size() == 2 ? 1 : 0, 1);
+    Design.Span roof = dpc.spanOf(pc.elements.get(1));
+    double worst = 0;
+    for (var k : pc.combinations(Combination.Limit.SLS)) {
+      Solution sol = Solver.solve(pc, k.loading());
+      ElementResult r = sol.of(pc.elements.get(1));
+      for (double x : r.samples(24)) {
+        // across the beam (horizontal): its deflection from the line through its ends, in y
+        double ya = sol.disp[1][1], yb = sol.disp[2][1];
+        worst = Math.max(worst, Math.abs(r.displacement(x)[1] - (ya + (yb - ya) * x / r.L)));
+      }
+    }
+    near("cases: the roof's deflection, the worst SLS combination", Math.abs(roof.deflection), worst, 1e-9);
+  }
+
   static void sections() {
     catalogues();
     Section rect = new Section(Section.Kind.RECT, 50, 100, 0);

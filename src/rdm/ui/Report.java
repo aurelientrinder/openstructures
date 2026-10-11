@@ -4,6 +4,8 @@ import static rdm.i18n.Tr.tr;
 
 import java.util.ArrayList;
 import java.util.List;
+import rdm.design.Design;
+import rdm.design.Design.Check;
 import rdm.i18n.Tr;
 import rdm.model.Combination;
 import rdm.model.Element;
@@ -193,6 +195,145 @@ final class Report {
     }
     b.append(tr("report.bucklingEuler")).append('\n');
     return b.toString();
+  }
+
+  /**
+   * The design checks: the loads they are made under, then every element's ratios (the largest is its
+   * utilisation), the buckling of the compressed ones, and every span's deflection, with the verdict.
+   */
+  static String of(Structure s, Design d) {
+    StringBuilder b = new StringBuilder();
+    b.append(tr("report.header", s.nodes.size(), s.elements.size())).append('\n');
+    b.append(tr("report.checks")).append('\n');
+    if (!d.ok()) {
+      if (d.failed == null) return b.append(tr("report.empty")).append('\n').toString();
+      String in = d.failedIn.isEmpty() ? "" : tr("status.inCombination", d.failedIn);
+      return b.append(d.failed.status == Solution.Status.MECHANISM ? tr("status.mechanism", d.failed.m, String.join(", ", d.failed.free))
+          : tr("status.error", d.failed.error)).append(in).append('\n').toString();
+    }
+    loads(b, s, d.uls, d.ulsGiven, "U", "report.checksUls", "report.checksNoUls");
+    loads(b, s, d.sls, d.slsGiven, "S", "report.checksSls", "report.checksNoSls");
+    b.append(tr("report.checksAssumptions")).append('\n');
+
+    b.append('\n').append(tr("report.strength")).append('\n');
+    b.append(row(tr("col.element"), "N/Npl", "V/Vpl", "M/Mc", "N+M", tr("col.buckling"), tr("col.ratio"), tr("col.in"), tr("col.class"), "fy (MPa)",
+        tr("col.grade")) .stripTrailing() + "  " + tr("col.section") + "\n");
+    List<String> failing = new ArrayList<>(), unchecked = new ArrayList<>(), slender = new ArrayList<>();
+    Design.Member worst = null;
+    for (Design.Member m : d.members) {
+      String n = Integer.toString(s.number(m.element));
+      if (!m.checked()) {
+        b.append(String.format("%-5s %s", n, tr("report.notChecked", m.why()))).append('\n');
+        unchecked.add(n);
+        continue;
+      }
+      Check g = m.governing();
+      int cls = 1;
+      for (Check c : Check.values()) if (m.worst(c).found()) cls = Math.max(cls, m.worst(c).cls);
+      b.append(row(n, ratio(m, Check.AXIAL), ratio(m, Check.SHEAR), ratio(m, Check.BENDING), ratio(m, Check.COMBINED), ratio(m, Check.BUCKLING),
+          Fmt.ratio(m.ratio()), by(d.uls, m.worst(g).by, "U"), Integer.toString(cls), Fmt.num(m.fy / 1e6), m.element.grade.name()).stripTrailing())
+          .append("  ").append(m.element.section.label()).append('\n');
+      if (m.ratio() > 1) failing.add(n);
+      if (worst == null || m.ratio() > worst.ratio()) worst = m;
+      if (m.shearBuckling()) slender.add(n);
+    }
+    if (worst != null) {
+      Check g = worst.governing();
+      Design.Worst w = worst.worst(g);
+      b.append(g == Check.BUCKLING ? tr("report.governsBuckling", s.number(worst.element), Fmt.ratio(worst.ratio()), g, by(d.uls, w.by, "U"))
+          : tr("report.governs", s.number(worst.element), Fmt.ratio(worst.ratio()), g, by(d.uls, w.by, "U"), Fmt.num(w.x))).append('\n');
+    }
+    b.append(failing.isEmpty() ? (worst == null ? tr("report.nothingChecked") : tr("report.strengthOk")) : tr("report.strengthFails", String.join(", ", failing)))
+        .append('\n');
+    if (!unchecked.isEmpty()) b.append(tr("report.uncheckedList", String.join(", ", unchecked))).append('\n');
+    if (!slender.isEmpty()) b.append(tr("report.shearBuckling", String.join(", ", slender))).append('\n');
+
+    StringBuilder buckling = new StringBuilder();
+    for (Design.Member m : d.members) {
+      Design.Worst w = m.worst(Check.BUCKLING);
+      if (!m.checked() || !w.found()) continue;
+      boolean given = m.element.bucklingFactor > 0;
+      buckling.append(row(Integer.toString(s.number(m.element)), k(-w.N), k(w.M), Double.isInfinite(w.Ncr) ? "∞" : k(w.Ncr),
+          Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr) + (given ? "" : "*"), Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr / m.element.length()),
+          Fmt.num(w.slenderness), String.valueOf(m.steel.curve), Fmt.num(w.chi), Fmt.num(w.kyy), Fmt.ratio(w.ratio), by(d.uls, w.by, "U")));
+    }
+    if (!buckling.isEmpty()) {
+      b.append('\n').append(tr("report.inPlaneBuckling")).append('\n');
+      b.append(row(tr("col.element"), "N Ed (kN)", tr("col.MEd"), tr("col.Ncr"), "Lcr (m)", "Lcr/L", "λ̄", tr("col.curve"), "χ", "kyy", tr("col.ratio"),
+          tr("col.in")));
+      b.append(buckling);
+      b.append(tr("report.bucklingLengths")).append('\n');
+    }
+
+    b.append('\n').append(tr("report.deflections", Fmt.num(s.deflectionLimit))).append('\n');
+    b.append(row(tr("col.span"), tr("col.elements"), "L (m)", "δ (mm)", tr("col.allowed"), "L/δ", tr("col.ratio"), tr("col.in")));
+    List<String> sagging = new ArrayList<>();
+    for (int i = 0; i < d.spans.size(); i++) {
+      Design.Span sp = d.spans.get(i);
+      String els = String.join("-", sp.elements.stream().map(e -> Integer.toString(s.number(e))).toList());
+      double delta = Math.abs(sp.deflection);
+      b.append(row(Integer.toString(i + 1) + (sp.cantilever ? "c" : ""), els, Fmt.num(sp.length), Fmt.num(delta * 1e3), Fmt.num(sp.allowed * 1e3),
+          delta < 1e-9 ? "—" : Fmt.num(Math.round((sp.cantilever ? 2 : 1) * sp.length / delta)), Fmt.ratio(sp.ratio()), by(d.sls, sp.by, "S")));
+      if (sp.ratio() > 1) sagging.add(Integer.toString(i + 1));
+    }
+    if (d.spans.stream().anyMatch(sp -> sp.cantilever)) b.append(tr("report.cantilever")).append('\n');
+    b.append(sagging.isEmpty() ? tr("report.deflectionsOk") : tr("report.deflectionsFail", String.join(", ", sagging))).append('\n');
+    return b.toString();
+  }
+
+  /** The loads of a limit state: the combinations, numbered with a prefix, or the cases as given. */
+  private static void loads(StringBuilder b, Structure s, List<Design.Loads> loads, boolean given, String prefix, String title, String none) {
+    if (!given) {
+      b.append(tr(none)).append('\n');
+      return;
+    }
+    b.append(tr(title, loads.size())).append('\n');
+    for (int k = 0; k < loads.size(); k++) {
+      Combination c = loads.get(k).combination();
+      String formula = c.formula(s);
+      b.append(String.format("  %s%-3d %s", prefix, k + 1, c.name.equals(formula) ? formula : c.name + " = " + formula)).append('\n');
+    }
+  }
+
+  private static String ratio(Design.Member m, Check c) {
+    Design.Worst w = m.worst(c);
+    return w.found() ? Fmt.ratio(w.ratio) : "—";
+  }
+
+  /** "U2": the loads it is in, "—" for the cases as given. */
+  private static String by(List<Design.Loads> loads, int k, String prefix) {
+    return k < 0 ? "—" : loads.get(k).combination() == null ? "*" : prefix + (k + 1);
+  }
+
+  /** The checks as a table, an element a row: its ratios, its utilisation, its span's deflection. */
+  static String csv(Design d) {
+    boolean comma = Tr.lang().decimal == ',';
+    String sep = comma ? ";" : ",";
+    Structure s = d.structure;
+    StringBuilder b = new StringBuilder(String.join(sep, tr("csv.element"), tr("csv.section"), tr("col.grade"), "fy (MPa)", tr("col.class"), "N/Npl",
+        "V/Vpl", "M/Mc", "N+M", tr("col.buckling"), tr("col.ratio"), tr("csv.governing"), tr("col.in"), "δ (mm)", tr("csv.allowed"), tr("csv.deflectionRatio")));
+    b.append("\r\n");
+    for (Design.Member m : d.members) {
+      List<String> cells = new ArrayList<>(List.of(Integer.toString(s.number(m.element)), m.element.section.label().replace(sep, " "), m.element.grade.name()));
+      if (m.checked()) {
+        Check g = m.governing();
+        int cls = 1;
+        for (Check c : Check.values()) if (m.worst(c).found()) cls = Math.max(cls, m.worst(c).cls);
+        cells.addAll(List.of(plain(m.fy / 1e6, comma), Integer.toString(cls)));
+        for (Check c : Check.values()) cells.add(m.worst(c).found() ? plain(m.worst(c).ratio, comma) : "");
+        cells.addAll(List.of(plain(m.ratio(), comma), g.toString(), name(d.uls, m.worst(g).by)));
+      } else {
+        cells.addAll(List.of("", "", "", "", "", "", "", "", m.why().replace(sep, " "), ""));
+      }
+      Design.Span sp = d.spanOf(m.element);
+      if (sp != null) cells.addAll(List.of(plain(Math.abs(sp.deflection) * 1e3, comma), plain(sp.allowed * 1e3, comma), plain(sp.ratio(), comma)));
+      b.append(String.join(sep, cells)).append("\r\n");
+    }
+    return b.toString();
+  }
+
+  private static String name(List<Design.Loads> loads, int k) {
+    return k < 0 ? "" : loads.get(k).combination() == null ? tr("csv.asGiven") : loads.get(k).name();
   }
 
   /**

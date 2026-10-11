@@ -10,6 +10,7 @@ import java.util.Locale;
 import rdm.model.Combination;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
+import rdm.model.Grade;
 import rdm.model.LoadCase;
 import rdm.model.Material;
 import rdm.model.Node;
@@ -23,18 +24,21 @@ import rdm.model.Support;
  * parameters as in Section; positions along an element as fractions of its length):
  *
  * <pre>
- * RDM 4
+ * RDM 5
+ * deflection limit                           (the deflection checks' L/limit)
  * case TYPE selfweight name                  (TYPE PERMANENT|VARIABLE, selfweight 0|1, the name to the end of the line)
- * combination k1 … kn name                   (a factor per case, in their order; the name to the end of the line)
+ * combination LIMIT k1 … kn name             (LIMIT ULS|SLS; a factor per case, in their order; the name to the end of the line)
  * node x y SUPPORT angle springT springN springR
- * elem a b hingeA hingeB KIND p1 p2 p3 p4 turned E rho      (a, b: node numbers from 1; turned 0|1)
+ * elem a b hingeA hingeB KIND p1 p2 p3 p4 turned E rho GRADE k
+ *                                            (a, b: node numbers from 1; turned 0|1; GRADE S235…; k: L_cr / L, 0 auto)
  * load n fx fy mz settleT settleN settleR c       (n: node number from 1; c: case number from 1)
  * force e t fx fy local c                         (e: element number from 1; local 0|1)
  * couple e t C c
  * dist e t1 t2 qx1 qy1 qx2 qy2 local c
  * </pre>
  *
- * Older files are read too, with every load in one case (G, permanent): version 3 had no cases nor combinations,
+ * Older files are read too. Version 4 had no deflection limit (300), no limit state on the combinations (ULS),
+ * no grade nor buckling length on the elements (S235, auto). Before, every load was in one case (G, permanent): version 3 had no cases nor combinations,
  * a line "selfweight 0|1", the loads and imposed displacements on the node line (node x y SUPPORT angle fx fy mz
  * settleT settleN settleR springT springN springR) and no case number on the element loads; version 2 had no p4
  * nor turned; version 1 no load lines, elem ending with E qx qy, node with its first 8 fields.
@@ -44,18 +48,21 @@ public final class StructureFile {
   private StructureFile() {}
 
   public static String write(Structure s) {
-    StringBuilder sb = new StringBuilder("RDM 4\n");
+    StringBuilder sb = new StringBuilder("RDM 5\n");
+    sb.append(line("deflection", s.deflectionLimit));
     for (LoadCase c : s.cases) sb.append(line("case", c.type.name(), c.selfWeight ? 1 : 0, c.name.strip()));
     for (Combination k : s.combinations) {
-      Object[] values = new Object[s.cases.size() + 1];
-      for (int i = 0; i < s.cases.size(); i++) values[i] = k.factor(s.cases.get(i));
-      values[s.cases.size()] = k.name.strip();
+      Object[] values = new Object[s.cases.size() + 2];
+      values[0] = k.limit.name();
+      for (int i = 0; i < s.cases.size(); i++) values[i + 1] = k.factor(s.cases.get(i));
+      values[s.cases.size() + 1] = k.name.strip();
       sb.append(line("combination", values));
     }
     for (Node n : s.nodes) sb.append(line("node", n.x, n.y, n.support.name(), n.supportAngle, n.springT, n.springN, n.springR));
     for (Element e : s.elements) {
       sb.append(line("elem", s.number(e.a), s.number(e.b), e.hingeA ? 1 : 0, e.hingeB ? 1 : 0, e.section.kind().name(),
-          e.section.p1(), e.section.p2(), e.section.p3(), e.section.p4(), e.section.turned() ? 1 : 0, e.material.E(), e.material.rho()));
+          e.section.p1(), e.section.p2(), e.section.p3(), e.section.p4(), e.section.turned() ? 1 : 0, e.material.E(), e.material.rho(),
+          e.grade.name(), e.bucklingFactor));
     }
     for (Node n : s.nodes) {
       for (LoadCase c : s.cases) {
@@ -88,7 +95,7 @@ public final class StructureFile {
     String[] lines = text.split("\\R");
     if (lines.length == 0 || !lines[0].trim().startsWith("RDM")) throw new IllegalArgumentException(tr("file.notRdm"));
     String head = lines[0].trim();
-    int version = head.equals("RDM 1") ? 1 : head.equals("RDM 2") ? 2 : head.equals("RDM 3") ? 3 : 4;
+    int version = head.equals("RDM 1") ? 1 : head.equals("RDM 2") ? 2 : head.equals("RDM 3") ? 3 : head.equals("RDM 4") ? 4 : 5;
     // the structure's own case G holds everything until the file lists its cases
     boolean ownCases = false;
     for (int k = 1; k < lines.length; k++) {
@@ -104,11 +111,14 @@ public final class StructureFile {
             s.addCase(p.length > 3 ? p[3] : "", LoadCase.Type.valueOf(p[1])).selfWeight = p[2].equals("1");
           }
           case "combination" -> {
-            int n = s.cases.size();
-            String[] p = l.split("\\s+", n + 2);
-            Combination c = s.addCombination(p.length > n + 1 ? p[n + 1] : "");
-            for (int i = 0; i < n; i++) c.setFactor(s.cases.get(i), d(p[i + 1]));
+            // from version 5, the limit state comes first
+            int n = s.cases.size(), at = version >= 5 ? 2 : 1;
+            String[] p = l.split("\\s+", n + at + 1);
+            Combination c = s.addCombination(p.length > n + at ? p[n + at] : "");
+            if (version >= 5) c.limit = Combination.Limit.valueOf(p[1]);
+            for (int i = 0; i < n; i++) c.setFactor(s.cases.get(i), d(p[i + at]));
           }
+          case "deflection" -> s.deflectionLimit = d(w[1]);
           case "selfweight" -> s.cases.get(0).selfWeight = w[1].equals("1");
           case "node" -> {
             Node n = s.addNode(d(w[1]), d(w[2]));
@@ -150,6 +160,10 @@ public final class StructureFile {
               if (qx != 0 || qy != 0) e.loads.add(ElementLoad.Distributed.uniform(s.cases.get(0), qx, qy));
             } else {
               e.material = Material.of(E, d(w[10 + shift]));
+            }
+            if (version >= 5) {
+              e.grade = Grade.valueOf(w[13]);
+              e.bucklingFactor = d(w[14]);
             }
             s.elements.add(e);
           }

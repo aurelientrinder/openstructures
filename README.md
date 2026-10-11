@@ -4,8 +4,8 @@
 
 A small Résistance des Matériaux application in Java, in the spirit of RDM7's *Ossatures* module: draw plane
 beams and trusses, put supports and loads on them, and see straight away how they deform, with the
-internal forces (N, V, M), the reactions and the degree of static indeterminacy. Every change is solved again
-live, including while a node is being dragged.
+internal forces (N, V, M), the reactions and the degree of static indeterminacy, then check the steel members
+(EN 1993-1-1) and the deflections. Every change is solved again live, including while a node is being dragged.
 
 In English and in French (Settings › Language; it follows the system's language at first). Plain Java 21 +
 Swing, no dependencies, no build tool.
@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver and the sections against closed-form results, and the texts (368 checks)
+verify.cmd       :: the solver, the sections and the design checks against closed-form results, and the texts (436 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -77,8 +77,9 @@ forces, maxima, σ max).
 or the envelope of all the combinations. The load tools put their loads in the case shown, and ask for one when a
 combination or the envelope is shown; the properties change the loads of the case shown. *Cases…* (Edit › Load
 cases and combinations, Ctrl+L) adds, renames and removes cases (permanent or variable, with or without the
-self-weight) and combinations, with a factor per case, and adds the usual ones of EN 1990 (6.10): 1.35 G + 1.5 Q
-with each variable case leading in turn and the others at 1.05 (ψ0 = 0.7), and G + 1.5 Q. A combination draws its
+self-weight) and combinations, each for a limit state (ULS for the strength, SLS for the deflections) with a factor
+per case, and adds the usual ones of EN 1990: at the ULS (6.10), 1.35 G + 1.5 Q with each variable case leading in
+turn and the others at 1.05 (ψ0 = 0.7), and G + 1.5 Q; at the SLS (characteristic, 6.14b), G + Q + 0.7 Q'. A combination draws its
 loads factored and is solved as one loading (the structure is linear: the same as the factored sum of its cases).
 The envelope solves every combination and draws the largest and the smallest N, V or M along each element
 (solid and dashed), the reactions' ranges, and in the properties and the Results tab the extremes with the
@@ -88,7 +89,7 @@ wind (W).
 
 ![The envelope of a portal frame's combinations: largest and smallest bending moment, reactions' ranges](docs/envelope.png)
 
-![Load cases and combinations: the cases, and a factor per case for each combination](docs/cases.png)
+![Load cases and combinations: the cases, and for each combination its limit state and a factor per case](docs/cases.png)
 
 In French the shear force and the bending moment are written T and Mf, as in French courses; in English V and M.
 
@@ -123,6 +124,29 @@ from). The sources are cited in `src/rdm/model/Catalogue.java`; `Verify` checks 
 
 ![The section templates: an I section drawn with its dimensions and its bending axis](docs/section.png)
 
+**Design checks.** *Show: Design checks* colours every element by its utilisation (green up to 0.9, orange up to 1,
+red beyond, grey when not checked), writes it beside the element, and writes each span's deflection as L/…. The
+properties give an element's details and the Results tab every number; the CSV export has a row per element.
+
+- **Strength, EN 1993-1-1, under the ULS combinations**, for the steel elements, γM0 = γM1 = 1. The grade (S235,
+  S275, S355) is in the element's properties, fy following the thickness (Table 3.1). Along each element, where N,
+  V or M may peak: the section's class (Table 5.2), N/Npl, V/Vpl (6.2.6), M/Mc with Wpl in class 1 and 2 and Wel in
+  class 3, reduced where V > Vpl/2, and N/Npl + M/Mc (6.2.1 (7), conservative). Class 4 sections are not checked.
+- **Flexural buckling in the plane** (6.3.1, and 6.61 with Annex B's kyy, Cmy = 1): the buckling length is k L
+  when k is given in the element's properties, else it comes from the structure's buckling in each combination
+  (Ncr = λcr·N Ed), so that a sway frame's columns get their longer length; a truss bar at most its length.
+- **Deflections, under the SLS combinations**: each span (a straight run of elements through nodes where nothing
+  else meets) from the line through its ends, at most L/300 (the limit is in the structure's properties); a
+  cantilever from its fixed end, at most 2 L/300.
+
+Without a combination of a limit state, its checks take the loads as given, every case at 1 (and say that the
+strength was then checked under loads not factored). Not checked: buckling out of the plane and lateral-torsional
+buckling (hold the members out of the plane), shear buckling of slender webs (flagged), holes and connections.
+`SteelSection`'s Wpl and Av agree with the ArcelorMittal and EN 10210 tables (IPE, HEA, HEB, UPN, SHS, RHS, CHS),
+which `Verify` checks.
+
+![Design checks of a portal frame: each element's utilisation, each span's deflection, and an element's checks in its properties](docs/checks.png)
+
 **File › Export** saves the drawing as it is on screen (without the grid) as a PNG image or an SVG vector
 drawing, the Results tab as text, and the diagrams as a CSV table for a spreadsheet: points along every element
 (both sides of each jump) with N, V, M and the displacement. The CSV uses ";" and decimal commas in French, ","
@@ -135,15 +159,16 @@ drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -j
 
 Units: lengths in m, forces in kN, section dimensions in mm (A/I/v typed in: cm), E in MPa, ρ in kg/m³,
 imposed displacements in mm and mrad, spring stiffnesses in kN/m and kN·m/rad.
-Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java` (version 4 has the load cases
-and combinations; older files open with every load in case G).
+Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java` (version 5 adds the limit states,
+grades, buckling lengths and the deflection limit; version 4 has the load cases and combinations; older files open
+with every load in case G).
 
 ## How it works
 
 - `rdm.model` — `Structure` (nodes, elements, load cases, combinations, the EN 1990 ones generated), `LoadCase`
-  (permanent or variable, self-weight or not), `Combination` (a factor per case), `Loading` (the factors the
+  (permanent or variable, self-weight or not), `Combination` (ULS or SLS, a factor per case), `Loading` (the factors the
   solver applies), `Node` (support, springs, a `NodeLoad` per case: forces and imposed displacement), `Element`
-  (hinges, section, material, loads), `ElementLoad` (force, couple, linear distributed load, each in a case,
+  (hinges, section, material, steel grade, buckling length, loads), `ElementLoad` (force, couple, linear distributed load, each in a case,
   positions as fractions of the length), `Support`, `Section` (templates; the thin-walled ones computed from
   their rectangles), `Material`, `Examples`.
 - `rdm.solver` — displacement method (`Solver`): 3 unknowns per node (ux, uy, θz), Euler–Bernoulli elements
@@ -157,6 +182,9 @@ and combinations; older files open with every load in case G).
   extreme reactions. `Buckling` cuts each element into sub-elements, adds their geometric stiffness from N, reduces
   K φ = λ (−K_g) φ with the Cholesky factor to a symmetric eigenproblem, solved by `Eigen` (Householder, then QL);
   a hinged end keeps a rotation of its own.
+- `rdm.design` — `SteelSection` (a section for EN 1993-1-1: Wpl, Av, its plates and their class, its buckling
+  curve) and `Design`, which solves the ULS and SLS combinations, checks every element along it, and cuts the
+  structure into spans for their deflection.
 - `rdm.i18n` — the texts: `En` and `Fr` map the same keys to each language, `Tr.tr(key, args…)` looks them up.
   To add a language, copy `Fr.java`, translate it and add it to `Tr.Lang`; `Verify` checks that every language
   has every key with the same arguments.
@@ -179,9 +207,9 @@ sections.
 
 ## Not yet
 
-Thermal loads, buckling out of the plane and lateral-torsional buckling, 3D, shear deformation (Timoshenko),
-other catalogues (UB, UC, W…), angles (their principal axes are inclined), serviceability and accidental
-combinations, printing.
+Thermal loads, buckling out of the plane and lateral-torsional buckling, class 4 (effective) sections, 3D, shear
+deformation (Timoshenko), other catalogues (UB, UC, W…), angles (their principal axes are inclined), quasi-permanent
+and accidental combinations, other materials' design (timber, concrete, aluminium), printing.
 
 ## Contributing
 

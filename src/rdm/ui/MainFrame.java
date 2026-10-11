@@ -50,6 +50,7 @@ import rdm.model.Examples;
 import rdm.model.LoadCase;
 import rdm.model.Loading;
 import rdm.model.Structure;
+import rdm.design.Design;
 import rdm.solver.Buckling;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
@@ -71,13 +72,17 @@ public final class MainFrame extends JFrame {
 
   /** The envelope of the combinations, as a view (the others are a load case or a combination). */
   static final Object ENVELOPE = new Object();
+  /** The design checks (EN 1993-1-1 and deflections), as a view: always there. */
+  static final Object CHECKS = new Object();
 
   private Structure structure = new Structure();
-  /** what is solved and shown: a load case of the structure, one of its combinations, or ENVELOPE */
+  /** what is solved and shown: a load case of the structure, one of its combinations, ENVELOPE or CHECKS */
   private Object shown = structure.cases.get(0);
   private Solution solution = Solver.solve(structure, Loading.of(structure.cases.get(0)));
   /** the combinations solved, when the envelope is shown; null otherwise */
   private Envelope envelope;
+  /** the checks, when they are shown; null otherwise */
+  private Design design;
   /** the buckling of the solution shown (with the envelope, of the combination with the smallest λcr); null when off */
   private Buckling buckling;
   /** with the envelope, the index of that combination, and every combination's λcr (NaN: it can't buckle); −1, null otherwise */
@@ -186,6 +191,16 @@ public final class MainFrame extends JFrame {
     return envelope != null && envelope.ok();
   }
 
+  /** The checks, when they are shown (null otherwise); see its ok(). */
+  Design design() {
+    return design;
+  }
+
+  /** The checks are shown and every combination was solved. */
+  boolean checksShown() {
+    return design != null && design.ok();
+  }
+
   Object shown() {
     return shown;
   }
@@ -199,7 +214,7 @@ public final class MainFrame extends JFrame {
     return shown instanceof Combination k ? k : null;
   }
 
-  /** The loads of the case or the combination shown (null for the envelope). */
+  /** The loads of the case or the combination shown (null for the envelope and the checks). */
   Loading loading() {
     return shown instanceof LoadCase c ? Loading.of(c) : shown instanceof Combination k ? k.loading() : null;
   }
@@ -260,6 +275,7 @@ public final class MainFrame extends JFrame {
    */
   private static Object match(Object view, Structure from, Structure to) {
     if (view == ENVELOPE) return to.combinations.isEmpty() ? to.cases.get(0) : ENVELOPE;
+    if (view == CHECKS) return CHECKS;
     if (view instanceof Combination k) {
       Object m = same(from.combinations.indexOf(k), k.name, to.combinations, c -> c.name);
       return m != null ? m : to.cases.get(0);
@@ -281,6 +297,7 @@ public final class MainFrame extends JFrame {
   /** The view as text, to hand it over when the application starts again: "case 1", "combination 2", "envelope". */
   String viewKey() {
     if (shown == ENVELOPE) return "envelope";
+    if (shown == CHECKS) return "checks";
     if (shown instanceof Combination k) return "combination " + structure.combinations.indexOf(k);
     return "case " + Math.max(0, structure.cases.indexOf(shown));
   }
@@ -290,6 +307,7 @@ public final class MainFrame extends JFrame {
     String[] w = key.split(" ");
     try {
       if (w[0].equals("envelope") && !structure.combinations.isEmpty()) show(ENVELOPE);
+      else if (w[0].equals("checks")) show(CHECKS);
       else if (w[0].equals("combination")) show(structure.combinations.get(Integer.parseInt(w[1])));
       else if (w[0].equals("case")) show(structure.cases.get(Integer.parseInt(w[1])));
     } catch (RuntimeException ignored) {
@@ -336,14 +354,18 @@ public final class MainFrame extends JFrame {
 
   /** Solves the view again (every combination for the envelope) and refreshes every view. */
   void changed() {
-    if (!(shown == ENVELOPE ? !structure.combinations.isEmpty() : structure.cases.contains(shown) || structure.combinations.contains(shown))) {
+    if (!(shown == CHECKS || (shown == ENVELOPE ? !structure.combinations.isEmpty() : structure.cases.contains(shown) || structure.combinations.contains(shown)))) {
       shown = structure.cases.get(0);
     }
+    envelope = null;
+    design = null;
     if (shown == ENVELOPE) {
       envelope = Envelope.of(structure);
       solution = envelope.failed != null ? envelope.failed : envelope.solutions.get(0);
+    } else if (shown == CHECKS) {
+      design = Design.of(structure);
+      solution = design.failed != null ? design.failed : design.ulsSolutions.get(0);
     } else {
-      envelope = null;
       solution = Solver.solve(structure, loading());
     }
     buckle();
@@ -376,7 +398,8 @@ public final class MainFrame extends JFrame {
     buckling = null;
     bucklingBy = -1;
     bucklingFactors = null;
-    if (bucklingMode == 0) return;
+    // the checks take the buckling into account themselves
+    if (bucklingMode == 0 || shown == CHECKS) return;
     if (!envelopeShown()) {
       buckling = Buckling.of(solution);
       return;
@@ -401,6 +424,7 @@ public final class MainFrame extends JFrame {
 
   /** The Results tab, for the view; with the buckling after the linear results when a mode is shown. */
   private String reportText() {
+    if (shown == CHECKS) return Report.of(structure, design);
     String text = envelopeShown() ? Report.of(structure, envelope) : Report.of(structure, solution, viewTitle(shown));
     if (buckling != null && solution.ok()) text += "\n" + Report.of(structure, buckling, bucklingCombination(), envelope, bucklingFactors);
     return text;
@@ -408,13 +432,14 @@ public final class MainFrame extends JFrame {
 
   private String summary() {
     Solution s = solution;
-    String failing = envelope != null && envelope.failed != null ? tr("status.inCombination", envelope.combinations.get(envelope.solutions.indexOf(s)).name) : "";
+    String failing = envelope != null && envelope.failed != null ? tr("status.inCombination", envelope.combinations.get(envelope.solutions.indexOf(s)).name)
+        : design != null && design.failed != null && !design.failedIn.isEmpty() ? tr("status.inCombination", design.failedIn) : "";
     return switch (s.status) {
       case EMPTY -> tr("status.empty");
       case ERROR -> tr("status.error", s.error) + failing;
       case MECHANISM -> tr("status.mechanism", s.m, String.join(", ", s.free)) + failing;
       case OK -> (s.h == 0 ? tr("status.determinate") : tr("status.indeterminate", s.h)) + " — "
-          + (envelopeShown()
+          + (checksShown() ? checksSummary() : envelopeShown()
               ? tr("status.envelope", envelope.solutions.size(), Fmt.mm(envelope.maxDisplacement), envelope.combinations.get(envelope.maxDisplacementBy).name)
               : tr("status.maxDisplacement", Fmt.mm(s.maxDisplacement)))
           + (buckling == null ? "" : buckling.ok() ? tr("status.buckling", Fmt.num(buckling.factor())) : tr("status.noBuckling"))
@@ -422,13 +447,23 @@ public final class MainFrame extends JFrame {
     };
   }
 
-  /** "Case G (permanent)", "Combination 1.35 G + 1.5 Q", "Envelope of the combinations". */
+  /** The largest utilisation and the largest deflection's ratio, and how many fail. */
+  private String checksSummary() {
+    double strength = design.maxRatio(), deflection = 0;
+    long fail = design.members.stream().filter(m -> m.checked() && m.ratio() > 1).count();
+    for (Design.Span sp : design.spans) deflection = Math.max(deflection, sp.ratio());
+    long sag = design.spans.stream().filter(sp -> sp.ratio() > 1).count();
+    return tr("status.checks", Fmt.ratio(strength), Fmt.ratio(deflection)) + (fail + sag == 0 ? tr("status.checksOk") : tr("status.checksFail", fail, sag));
+  }
+
+  /** "Case G (permanent)", "Combination 1.35 G + 1.5 Q", "Envelope of the combinations", "Design checks". */
   String viewTitle(Object view) {
     if (view == ENVELOPE) return tr("view.envelope");
+    if (view == CHECKS) return tr("view.checks");
     if (view instanceof LoadCase c) return tr("view.case", c.name, c.type);
     if (view instanceof Combination k) {
       String formula = k.formula(structure);
-      return k.name.equals(formula) ? tr("view.combination", k.name) : tr("view.combinationNamed", k.name, formula);
+      return k.name.equals(formula) ? tr("view.combination", k.name, k.limit) : tr("view.combinationNamed", k.name, formula, k.limit);
     }
     return "";
   }
@@ -493,7 +528,8 @@ public final class MainFrame extends JFrame {
         JOptionPane.showMessageDialog(this, tr("export.notSolved"), tr("menu.export"), JOptionPane.WARNING_MESSAGE);
         return;
       }
-      String csv = buckling != null && buckling.ok() ? Report.csv(buckling) : envelopeShown() ? Report.csv(envelope) : Report.csv(solution);
+      String csv = checksShown() ? Report.csv(design) : buckling != null && buckling.ok() ? Report.csv(buckling) : envelopeShown() ? Report.csv(envelope)
+          : Report.csv(solution);
       // with a byte order mark, so that a spreadsheet reads it as UTF-8 (kN·m)
       export("csv", tr("export.csvFilter"), p -> Files.writeString(p, "\uFEFF" + csv, StandardCharsets.UTF_8));
     }));
@@ -612,6 +648,7 @@ public final class MainFrame extends JFrame {
       structure.cases.forEach(showBox::addItem);
       structure.combinations.forEach(showBox::addItem);
       if (!structure.combinations.isEmpty()) showBox.addItem(ENVELOPE);
+      showBox.addItem(CHECKS);
       showBox.setSelectedItem(shown);
     } finally {
       fillingShowBox = false;

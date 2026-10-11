@@ -27,8 +27,10 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.Scrollable;
 import rdm.model.Combination;
+import rdm.design.Design;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
+import rdm.model.Grade;
 import rdm.model.LoadCase;
 import rdm.model.Loading;
 import rdm.model.Material;
@@ -79,6 +81,7 @@ final class Inspector extends JPanel implements Scrollable {
     k.add(System.identityHashCode(app.shown()));
     k.add(sol.status);
     k.add(app.envelopeShown());
+    k.add(app.checksShown());
     k.add(app.buckling() == null ? "no buckling" : app.buckling().status);
     if (sel instanceof Node n) k.add(n.support);
     if (sel instanceof Element e) {
@@ -130,6 +133,18 @@ final class Inspector extends JPanel implements Scrollable {
         double w = k.loading().selfWeight(s);
         return w == 0 ? tr("insp.none") : "× " + Fmt.num(w);
       });
+    } else if (app.shown() == MainFrame.CHECKS) {
+      number(tr("insp.deflectionLimit"), () -> s.deflectionLimit, v -> s.deflectionLimit = v > 0 ? v : s.deflectionLimit);
+      if (app.checksShown()) {
+        value(tr("insp.maxRatio"), () -> app.checksShown() ? Fmt.ratio(app.design().maxRatio()) : "—");
+        value(tr("insp.maxDeflectionRatio"), () -> {
+          if (!app.checksShown()) return "—";
+          double r = 0;
+          for (Design.Span sp : app.design().spans) r = Math.max(r, sp.ratio());
+          return Fmt.ratio(r);
+        });
+        liveNote(() -> !app.checksShown() ? "" : (app.design().ulsGiven ? "" : tr("insp.noUls") + " ") + (app.design().slsGiven ? "" : tr("insp.noSls")));
+      }
     } else {
       value(tr("insp.combinations"), () -> Integer.toString(s.combinations.size()));
       if (app.envelopeShown()) {
@@ -139,7 +154,7 @@ final class Inspector extends JPanel implements Scrollable {
         });
       }
     }
-    note(tr(c != null ? "insp.caseHelp" : k != null ? "insp.combinationHelp" : "insp.envelopeHelp"), false);
+    note(tr(c != null ? "insp.caseHelp" : k != null ? "insp.combinationHelp" : app.shown() == MainFrame.CHECKS ? "insp.checksHelp" : "insp.envelopeHelp"), false);
     JButton cases = new JButton(tr("insp.editCases"));
     cases.addActionListener(ev -> app.editCases());
     GridBagConstraints cc = constraints(0);
@@ -233,7 +248,7 @@ final class Inspector extends JPanel implements Scrollable {
         value(tr("insp.reaction", "Ry"), () -> range(i, 1, false));
         value(tr("insp.reaction", "Mz"), () -> range(i, 2, true));
       }
-    } else if (app.solution().ok()) {
+    } else if (app.solution().ok() && app.shown() != MainFrame.CHECKS) {
       heading(tr("insp.results"));
       value("ux", () -> app.solution().ok() ? Fmt.mm(app.solution().disp[i][0]) : "—");
       value("uy", () -> app.solution().ok() ? Fmt.mm(app.solution().disp[i][1]) : "—");
@@ -394,6 +409,18 @@ final class Inspector extends JPanel implements Scrollable {
     field(tr("insp.material"), mat);
     number("E (MPa)", () -> e.material.E(), v -> e.material = Material.of(v, e.material.rho()));
     number("ρ (kg/m³)", () -> e.material.rho(), v -> e.material = Material.of(e.material.E(), v));
+    if (e.material.name().equals("steel")) {
+      JComboBox<Grade> grade = new JComboBox<>(Grade.values());
+      grade.setSelectedItem(e.grade);
+      grade.addActionListener(ev -> {
+        Grade v = (Grade) grade.getSelectedItem();
+        if (v != null && v != e.grade) app.edit(() -> e.grade = v);
+      });
+      updaters.add(() -> grade.setSelectedItem(e.grade));
+      field(tr("insp.grade"), grade);
+      number(tr("insp.bucklingFactor"), () -> e.bucklingFactor, v -> e.bucklingFactor = Math.max(0, v));
+      note(tr("insp.bucklingFactorHelp"), true);
+    }
 
     // the loads of the case shown, to change; of a combination, factored; with the envelope, every case's
     LoadCase c = app.shownCase();
@@ -434,6 +461,8 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.rangeM"), () -> extremes(e, Envelope.Effort.M, true));
       liveNote(() -> worst(e, tr("insp.maxM"), ElementResult::maxAbsM, Fmt::kNm));
       liveNote(() -> worst(e, tr("insp.sigma"), ElementResult::sigmaMax, Fmt::MPa));
+    } else if (app.shown() == MainFrame.CHECKS) {
+      if (app.checksShown()) checks(e);
     } else if (app.solution().ok()) {
       heading(tr("insp.elementResults"));
       value(tr("insp.endsN"), () -> ends(e, ElementResult::N, false));
@@ -452,6 +481,59 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.euler"), () -> member(e, m -> Fmt.kN(m.euler())));
       note(tr("insp.bucklingElementHelp"), true);
     }
+  }
+
+  /** The element's checks: its utilisation and each check's ratio, its span's deflection. */
+  private void checks(Element e) {
+    heading(tr("insp.checks"));
+    Design.Member m0 = app.design().of(e);
+    if (m0 == null || !m0.checked()) {
+      liveNote(() -> {
+        Design.Member m = member(e);
+        return m == null || m.why() == null ? "" : tr("report.notChecked", m.why());
+      });
+    } else {
+      value(tr("insp.fyClass"), () -> {
+        Design.Member m = member(e);
+        if (m == null || !m.checked()) return "—";
+        int cls = 1;
+        for (Design.Check c : Design.Check.values()) if (m.worst(c).found()) cls = Math.max(cls, m.worst(c).cls);
+        return Fmt.MPa(m.fy) + ", " + tr("insp.class", cls);
+      });
+      value(tr("insp.utilisation"), () -> {
+        Design.Member m = member(e);
+        return m == null || !m.checked() ? "—" : Fmt.ratio(m.ratio());
+      });
+      liveNote(() -> {
+        Design.Member m = member(e);
+        if (m == null || !m.checked()) return "";
+        Design.Check g = m.governing();
+        Design.Worst w = m.worst(g);
+        Design.Loads l = app.design().uls.get(w.by);
+        String in = l.combination() == null ? tr("insp.asGiven") : l.name();
+        return g == Design.Check.BUCKLING ? tr("insp.governsBuckling", g, in) : tr("insp.governs", g, in, Fmt.num(w.x));
+      });
+      for (Design.Check c : Design.Check.values()) {
+        value(c.toString(), () -> {
+          Design.Member m = member(e);
+          return m == null || !m.checked() || !m.worst(c).found() ? "—" : Fmt.ratio(m.worst(c).ratio);
+        });
+      }
+      value(tr("insp.Lcr"), () -> {
+        Design.Member m = member(e);
+        Design.Worst w = m == null || !m.checked() ? null : m.worst(Design.Check.BUCKLING);
+        return w == null || !w.found() || Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr) + " m, χ = " + Fmt.num(w.chi);
+      });
+    }
+    value(tr("insp.deflection"), () -> {
+      Design.Span sp = app.checksShown() ? app.design().spanOf(e) : null;
+      return sp == null ? "—" : Fmt.mm(Math.abs(sp.deflection)) + " / " + Fmt.mm(sp.allowed) + " (" + Fmt.ratio(sp.ratio()) + ")";
+    });
+    note(tr("insp.checksElementHelp"), true);
+  }
+
+  private Design.Member member(Element e) {
+    return app.checksShown() ? app.design().of(e) : null;
   }
 
   /** A buckling result of the element, "—" when it is not compressed. */

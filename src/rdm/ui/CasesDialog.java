@@ -30,7 +30,7 @@ import rdm.model.Structure;
 
 /**
  * The load cases and their combinations, in two tables: the cases (name, permanent or variable, self-weight), then
- * the combinations with a factor per case, one column each. Works on a copy of the structure: OK hands it back,
+ * the combinations with their limit state and a factor per case, one column each. Works on a copy of the structure: OK hands it back,
  * Cancel forgets it. A combination named after its formula ("1.35 G + 1.5 Q") keeps that name up to date as its
  * factors or the cases' names change.
  */
@@ -49,11 +49,17 @@ final class CasesDialog {
     caseTable.getColumnModel().getColumn(1).setCellEditor(new DefaultCellEditor(new JComboBox<>(LoadCase.Type.values())));
     javax.swing.table.DefaultTableCellRenderer right = new javax.swing.table.DefaultTableCellRenderer();
     right.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
-    // the factors' columns come and go with the cases: their renderer is chosen here, not set on each column
+    // the factors' columns come and go with the cases: their renderer and editor are chosen here, not set on each column
+    DefaultCellEditor limits = new DefaultCellEditor(new JComboBox<>(Combination.Limit.values()));
     comboTable = new JTable(combos) {
       @Override
       public javax.swing.table.TableCellRenderer getCellRenderer(int row, int col) {
-        return col == 0 ? super.getCellRenderer(row, col) : right;
+        return col <= 1 ? super.getCellRenderer(row, col) : right;
+      }
+
+      @Override
+      public javax.swing.table.TableCellEditor getCellEditor(int row, int col) {
+        return col == 1 ? limits : super.getCellEditor(row, col);
       }
     };
     for (JTable t : List.of(caseTable, comboTable)) {
@@ -71,7 +77,7 @@ final class CasesDialog {
     body.add(buttons(button(tr("cases.addCase"), this::addCase), button(tr("cases.removeCase"), this::removeCase)));
     body.add(Box.createVerticalStrut(8));
     body.add(heading(tr("cases.combinations")));
-    body.add(scroll(comboTable, 150));
+    body.add(scroll(comboTable, 170));
     body.add(buttons(button(tr("cases.addCombination"), this::addCombination), button(tr("cases.removeCombination"), this::removeCombination),
         button(tr("cases.generate"), this::generate)));
     body.add(note(tr("cases.note")));
@@ -154,12 +160,12 @@ final class CasesDialog {
 
     @Override
     public int getColumnCount() {
-      return 1 + s.cases.size();
+      return 2 + s.cases.size();
     }
 
     @Override
     public String getColumnName(int col) {
-      return col == 0 ? tr("cases.colName") : tr("cases.colFactor", s.cases.get(col - 1).name);
+      return col == 0 ? tr("cases.colName") : col == 1 ? tr("cases.colLimit") : tr("cases.colFactor", s.cases.get(col - 2).name);
     }
 
     @Override
@@ -170,7 +176,7 @@ final class CasesDialog {
     @Override
     public Object getValueAt(int row, int col) {
       Combination k = s.combinations.get(row);
-      return col == 0 ? k.name : Fmt.num(k.factor(s.cases.get(col - 1)));
+      return col == 0 ? k.name : col == 1 ? k.limit : Fmt.num(k.factor(s.cases.get(col - 2)));
     }
 
     @Override
@@ -179,10 +185,12 @@ final class CasesDialog {
       if (col == 0) {
         String name = v.toString().strip();
         if (!name.isEmpty()) k.name = name;
+      } else if (col == 1) {
+        if (v instanceof Combination.Limit l) k.limit = l;
       } else {
         try {
           double f = Fmt.parse(v.toString());
-          LoadCase c = s.cases.get(col - 1);
+          LoadCase c = s.cases.get(col - 2);
           boolean named = k.name.equals(k.formula(s));
           k.setFactor(c, f);
           if (named) k.name = k.formula(s);

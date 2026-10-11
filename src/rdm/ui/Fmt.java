@@ -35,6 +35,13 @@ final class Fmt {
     return num(m * 1e3) + " mm";
   }
 
+  /** A utilisation, 2 decimals rounded up: 1.004 fails, so it shows 1.01, not 1.00. */
+  static String ratio(double r) {
+    if (Double.isNaN(r)) return "—";
+    if (Double.isInfinite(r)) return "∞";
+    return Tr.decimal(String.format(java.util.Locale.ROOT, "%.2f", Math.max(0, Math.ceil(r * 100 - 1e-9)) / 100));
+  }
+
   static String MPa(double pa) {
     return num(pa / 1e6) + " MPa";
   }

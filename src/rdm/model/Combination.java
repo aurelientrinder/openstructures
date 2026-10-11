@@ -1,12 +1,28 @@
 package rdm.model;
 
+import static rdm.i18n.Tr.tr;
+
 import java.util.IdentityHashMap;
 import java.util.Map;
 import rdm.i18n.Tr;
 
-/** A combination of load cases (combinaison de charges): a factor per case, 1.35 G + 1.5 Q for instance. */
+/**
+ * A combination of load cases (combinaison de charges): a factor per case, 1.35 G + 1.5 Q for instance, for a
+ * limit state: the strength checks take the ultimate ones, the deflection checks the serviceability ones.
+ */
 public final class Combination {
+  /** ELU, ultimate limit state (strength); ELS, serviceability limit state (deflections) */
+  public enum Limit {
+    ULS, SLS;
+
+    @Override
+    public String toString() {
+      return tr("limit." + name());
+    }
+  }
+
   public String name;
+  public Limit limit = Limit.ULS;
   private final Map<LoadCase, Double> factors = new IdentityHashMap<>();
 
   public Combination(String name) {
@@ -31,8 +47,9 @@ public final class Combination {
     return new Loading(factors);
   }
 
-  /** The same factors for every case of the structure. */
+  /** The same limit state and factors for every case of the structure. */
   boolean sameFactors(Combination o, Structure s) {
+    if (limit != o.limit) return false;
     for (LoadCase c : s.cases) if (factor(c) != o.factor(c)) return false;
     return true;
   }

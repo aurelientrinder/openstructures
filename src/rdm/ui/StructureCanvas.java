@@ -27,6 +27,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import rdm.design.Design;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 import rdm.model.LoadCase;
@@ -53,6 +54,9 @@ final class StructureCanvas extends JPanel {
   private static final Color DEFORMED = new Color(0xd0, 0x21, 0x6b);
   private static final Color BUCKLING = new Color(0xd9, 0x6c, 0x00);
   private static final Color GRID = new Color(0xd8, 0xdc, 0xe4);
+  /** the checks: holds with room, holds just, fails, not checked */
+  private static final Color OK = new Color(0x2e, 0xa0, 0x43), NEAR = new Color(0xe0, 0x8a, 0x00), FAIL = new Color(0xd0, 0x1f, 0x1f),
+      UNCHECKED = new Color(0xa0, 0xa4, 0xac);
   private static final double PICK = 9;
 
   private final MainFrame app;
@@ -407,6 +411,18 @@ final class StructureCanvas extends JPanel {
     Solution sol = app.solution();
     if (!sol.ok()) return null;
     Structure s = app.structure();
+    if (app.checksShown()) {
+      Object[] hit = nodeAt(px, py) == null ? elementAt(px, py) : null;
+      if (hit == null) return null;
+      Design d = app.design();
+      Design.Member m = d.of((Element) hit[0]);
+      Design.Span sp = d.spanOf(m.element);
+      String deflection = sp == null ? "" : tr("canvas.readDeflection", Fmt.mm(Math.abs(sp.deflection)), Fmt.mm(sp.allowed));
+      if (!m.checked()) return tr("canvas.readUnchecked", s.number(m.element), m.why()) + deflection;
+      Design.Check g = m.governing();
+      Design.Loads l = d.uls.get(m.worst(g).by);
+      return tr("canvas.readCheck", s.number(m.element), Fmt.ratio(m.ratio()), g, l.combination() == null ? tr("insp.asGiven") : l.name()) + deflection;
+    }
     if (app.envelopeShown()) {
       Object[] hit = nodeAt(px, py) == null ? elementAt(px, py) : null;
       if (hit == null) return null;
@@ -485,22 +501,24 @@ final class StructureCanvas extends JPanel {
     Solution sol = app.solution();
     taken.clear();
     tags.clear();
-    boolean envelope = app.envelopeShown();
+    boolean envelope = app.envelopeShown(), checks = app.checksShown();
     // a buckling mode is drawn alone, instead of the deformed shape, the diagram and the reactions
     Buckling buckling = sol.ok() ? app.buckling() : null;
     if (!exporting) paintGrid(g);
     paintTitle(g);
-    boolean diagram = buckling == null && app.diagram != MainFrame.Diagram.NONE, reactions = buckling == null && app.showReactions;
+    boolean diagram = !checks && buckling == null && app.diagram != MainFrame.Diagram.NONE, reactions = !checks && buckling == null && app.showReactions;
+    if (checks) paintChecks(g, app.design());
     if (envelope && diagram) paintEnvelope(g, app.envelope());
     else if (sol.ok() && diagram) paintDiagram(g, sol);
     // under the elements: where the mode stays on an element, the element (and its selection) shows
     if (buckling != null) paintMode(g, buckling);
     paintElements(g, s);
-    if (buckling == null && !envelope && sol.ok() && app.showDeformed) paintDeformed(g, sol);
+    if (buckling == null && !envelope && !checks && sol.ok() && app.showDeformed) paintDeformed(g, sol);
     paintSupportsAndHinges(g, s);
     if (app.loading() != null) paintLoads(g, s, app.loading());
     if (envelope && reactions) paintEnvelopeReactions(g, s, app.envelope());
     else if (sol.ok() && reactions) paintReactions(g, s, sol);
+    if (checks) paintCheckLabels(g, app.design());
     paintTags(g);
     paintNodes(g, s);
     if (chain != null && !exporting) {
@@ -588,6 +606,68 @@ final class StructureCanvas extends JPanel {
       }
     }
     return x == 0 && y == 0 ? 90 : Math.toDegrees(Math.atan2(y, x));
+  }
+
+  private static Color ratioColor(double r) {
+    return Double.isNaN(r) ? UNCHECKED : r > 1 ? FAIL : r > 0.9 ? NEAR : OK;
+  }
+
+  /** Each element under a broad stroke of its utilisation's colour, with the legend under the title. */
+  private void paintChecks(Graphics2D g, Design d) {
+    for (Design.Member m : d.members) {
+      Element e = m.element;
+      g.setColor(ratioColor(m.ratio()));
+      g.setStroke(new BasicStroke(10f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+      g.draw(new Line2D.Double(sx(e.a.x), sy(e.a.y), sx(e.b.x), sy(e.b.y)));
+    }
+    String[] keys = {"canvas.legendOk", "canvas.legendNear", "canvas.legendFail", "canvas.legendUnchecked"};
+    Color[] colors = {OK, NEAR, FAIL, UNCHECKED};
+    float x = 12, y = 40;
+    for (int i = 0; i < keys.length; i++) {
+      String text = tr(keys[i]);
+      g.setColor(colors[i]);
+      g.fillRect((int) x, (int) y - 9, 18, 10);
+      g.setColor(Symbols.INK);
+      g.drawString(text, x + 23, y);
+      taken.add(new Rectangle2D.Double(x, y - 12, 26 + g.getFontMetrics().stringWidth(text), 16));
+      x += 36 + g.getFontMetrics().stringWidth(text);
+    }
+  }
+
+  /** Beside each element its utilisation; beside each span, where it sags most, its deflection as L / … . */
+  private void paintCheckLabels(Graphics2D g, Design d) {
+    Structure s = d.structure;
+    for (Design.Member m : d.members) {
+      Element e = m.element;
+      double dx = sx(e.b.x) - sx(e.a.x), dy = sy(e.b.y) - sy(e.a.y), l = Math.hypot(dx, dy);
+      if (l == 0) continue;
+      // on the side the element's local y points to, 16 px out
+      double nx = dy / l, ny = -dx / l, mx = (sx(e.a.x) + sx(e.b.x)) / 2, my = (sy(e.a.y) + sy(e.b.y)) / 2;
+      double r = m.ratio();
+      g.setColor(ratioColor(r).darker());
+      g.setFont(g.getFont().deriveFont(Font.BOLD));
+      String text = Fmt.ratio(r);
+      double off = away(g, text, nx, ny);
+      labelAway(g, text, mx - nx * off, my - ny * off, -nx * 12, -ny * 12);
+      g.setFont(g.getFont().deriveFont(Font.PLAIN));
+    }
+    for (Design.Span sp : d.spans) {
+      if (sp.by < 0 || Math.abs(sp.deflection) < 1e-9) continue;
+      double t = sp.at / sp.length, x = sp.from.x + (sp.to.x - sp.from.x) * t, y = sp.from.y + (sp.to.y - sp.from.y) * t;
+      double dx = sx(sp.to.x) - sx(sp.from.x), dy = sy(sp.to.y) - sy(sp.from.y), l = Math.hypot(dx, dy);
+      double nx = dy / l, ny = -dx / l;
+      long over = Math.round((sp.cantilever ? 2 : 1) * sp.length / Math.abs(sp.deflection));
+      g.setColor(sp.ratio() > 1 ? FAIL : Symbols.INK);
+      String text = tr("canvas.deflection", Fmt.num(over));
+      double off = away(g, text, nx, ny);
+      labelAway(g, text, sx(x) + nx * off, sy(y) + ny * off, nx * 12, ny * 12);
+    }
+  }
+
+  /** How far from an element along its normal (nx, ny) a label's centre goes for the label to clear its broad stroke. */
+  private static double away(Graphics2D g, String text, double nx, double ny) {
+    var fm = g.getFontMetrics();
+    return 9 + Math.abs(nx) * (fm.stringWidth(text) / 2.0 + 2) + Math.abs(ny) * fm.getHeight() / 2.0;
   }
 
   /** The view's name, top left: the case, the combination or the envelope. */

@@ -13,6 +13,13 @@ public final class Element {
   public boolean hingeA, hingeB;
   public Section section;
   public Material material = Material.STEEL;
+  /** the steel's grade, for the design checks (when the material is steel) */
+  public Grade grade = Grade.S235;
+  /**
+   * For the design checks, its buckling length in the plane as a multiple k of its length (L_cr = k L); 0: from
+   * the structure's buckling analysis, for each combination
+   */
+  public double bucklingFactor;
   /** the loads along it, each in its case (the self-weight is added by the solver for the cases that take it in) */
   public final List<ElementLoad> loads = new ArrayList<>();
 
