@@ -5,13 +5,14 @@ import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 import javax.swing.JComponent;
 import rdm.i18n.Tr;
+import rdm.i18n.Units;
 
 /**
  * What the application remembers between runs (Java user preferences: the registry on Windows).
  *
  * The interface size is Java's {@code sun.java2d.uiScale}: it scales every widget, font and drawing stroke at
  * once and stays sharp, but it is read when the window system starts, so a change applies at the next start.
- * So does the language, which the whole window is built in.
+ * So does the language, which the whole window is built in. The units apply at once.
  */
 public final class Settings {
   private Settings() {}
@@ -19,6 +20,7 @@ public final class Settings {
   private static final Preferences PREFS = Preferences.userNodeForPackage(Settings.class);
   private static final String UI_SCALE = "uiScale";
   private static final String LANGUAGE = "language";
+  private static final String LENGTH_UNIT = "lengthUnit", FORCE_UNIT = "forceUnit";
 
   /** The sizes offered, as factors; 0 leaves the size to the system (Windows' display scale). */
   public static final double[] UI_SCALES = {0, 1, 1.25, 1.5, 1.75, 2, 2.5, 3};
@@ -46,6 +48,27 @@ public final class Settings {
     flush();
   }
 
+  /** The units chosen (m and kN at first). */
+  public static Units.Length lengthUnit() {
+    String v = PREFS.get(LENGTH_UNIT, null);
+    for (Units.Length l : Units.Length.values()) if (l.name().equals(v)) return l;
+    return Units.Length.M;
+  }
+
+  public static Units.Force forceUnit() {
+    String v = PREFS.get(FORCE_UNIT, null);
+    for (Units.Force f : Units.Force.values()) if (f.name().equals(v)) return f;
+    return Units.Force.KN;
+  }
+
+  /** Keeps the units and uses them at once (nothing else depends on them at start). */
+  public static void setUnits(Units.Length l, Units.Force f) {
+    PREFS.put(LENGTH_UNIT, l.name());
+    PREFS.put(FORCE_UNIT, f.name());
+    flush();
+    Units.use(l, f);
+  }
+
   private static void flush() {
     try {
       PREFS.flush();
@@ -65,5 +88,6 @@ public final class Settings {
     Tr.use(l != null ? l : Tr.system());
     Locale.setDefault(Tr.lang().locale);
     JComponent.setDefaultLocale(Tr.lang().locale);
+    Units.use(lengthUnit(), forceUnit());
   }
 }

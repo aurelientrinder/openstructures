@@ -44,6 +44,7 @@ import javax.swing.SwingConstants;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import rdm.Settings;
 import rdm.i18n.Tr;
+import rdm.i18n.Units;
 import rdm.io.StructureFile;
 import rdm.model.Combination;
 import rdm.model.Examples;
@@ -108,6 +109,9 @@ public final class MainFrame extends JFrame {
   private final JLabel hint = new JLabel(" ");
   private final Map<Tool, AbstractButton> toolButtons = new EnumMap<>(Tool.class);
   private final JComboBox<Object> showBox = new JComboBox<>();
+  /** the grid's steps, in the length unit */
+  private final JComboBox<String> gridBox = new JComboBox<>();
+  private boolean fillingGridBox;
   /** while the views' list is filled again: its selection events are not the user's */
   private boolean fillingShowBox;
 
@@ -572,8 +576,69 @@ public final class MainFrame extends JFrame {
       language.add(it);
     }
     r.add(language);
+    JMenu units = new JMenu(tr("menu.units"));
+    ButtonGroup lengths = new ButtonGroup(), forces = new ButtonGroup();
+    units.add(new JLabel("  " + tr("menu.units.length")));
+    for (Units.Length l : Units.Length.values()) {
+      JRadioButtonMenuItem it = new JRadioButtonMenuItem(l.symbol, l == Units.length());
+      it.addActionListener(ev -> chooseUnits(l, Units.force()));
+      lengths.add(it);
+      units.add(it);
+    }
+    units.addSeparator();
+    units.add(new JLabel("  " + tr("menu.units.force")));
+    for (Units.Force force : Units.Force.values()) {
+      JRadioButtonMenuItem it = new JRadioButtonMenuItem(force.symbol, force == Units.force());
+      it.addActionListener(ev -> chooseUnits(Units.length(), force));
+      forces.add(it);
+      units.add(it);
+    }
+    units.addSeparator();
+    units.add(new JLabel("  " + tr("menu.units.note")));
+    r.add(units);
     bar.add(r);
     return bar;
+  }
+
+  /**
+   * Shows and takes lengths and forces in other units, at once: the grid's steps follow the length unit, and a
+   * drawing still empty is shown at a scale for it. The structure itself (in m and N) does not change.
+   */
+  private void chooseUnits(Units.Length l, Units.Force f) {
+    boolean lengthChanged = l != Units.length();
+    Settings.setUnits(l, f);
+    if (lengthChanged) {
+      fillGridBox();
+      if (structure.isEmpty()) canvas.fit();
+    }
+    // the tool's hint and the panel's labels carry the units
+    setTool(tool);
+    inspector.rebuildNow();
+    changed();
+  }
+
+  /** The grid's steps in the length unit (m), the middle one chosen. */
+  private static double[] gridSteps() {
+    return switch (Units.length()) {
+      case M -> new double[] {0.1, 0.25, 0.5, 1};
+      case CM -> new double[] {0.01, 0.05, 0.1, 0.25, 0.5};
+      case MM -> new double[] {0.001, 0.005, 0.01, 0.025, 0.05, 0.1};
+    };
+  }
+
+  private void fillGridBox() {
+    double[] steps = gridSteps();
+    fillingGridBox = true;
+    try {
+      gridBox.removeAllItems();
+      for (double step : steps) gridBox.addItem(Fmt.length(step));
+      int middle = steps.length / 2;
+      gridBox.setSelectedIndex(middle);
+      grid = steps[middle];
+    } finally {
+      fillingGridBox = false;
+    }
+    canvas.repaint();
   }
 
   /** Keeps the new interface size, which applies at the next start: offers to start again now. */
@@ -727,13 +792,11 @@ public final class MainFrame extends JFrame {
     bar.add(numbers);
     bar.addSeparator();
     bar.add(new JLabel(tr("display.grid")));
-    double[] steps = {0.1, 0.25, 0.5, 1};
-    JComboBox<String> gridBox = new JComboBox<>();
-    for (double step : steps) gridBox.addItem(Fmt.num(step) + " m");
-    gridBox.setSelectedIndex(2);
+    fillGridBox();
     gridBox.setMaximumSize(new Dimension(90, 26));
     gridBox.addActionListener(e -> {
-      grid = steps[gridBox.getSelectedIndex()];
+      if (fillingGridBox || gridBox.getSelectedIndex() < 0) return;
+      grid = gridSteps()[gridBox.getSelectedIndex()];
       canvas.repaint();
     });
     bar.add(gridBox);

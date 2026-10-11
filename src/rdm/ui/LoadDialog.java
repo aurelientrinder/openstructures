@@ -9,6 +9,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import rdm.i18n.Units;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 
@@ -30,11 +31,11 @@ final class LoadDialog {
   }
 
   static ElementLoad force(Component parent, Element e, ElementLoad.Force init) {
-    double L = e.length();
+    double L = Units.L(e.length());
     Form f = new Form(tr("load.force"), tr("load.forceLocal"), init.local());
     f.field(tr("load.position", Fmt.num(L)), init.t() * L);
-    f.field("Fx (kN)", init.fx() / 1e3);
-    f.field("Fy (kN)", init.fy() / 1e3);
+    f.field("Fx (" + Units.f() + ")", Units.F(init.fx()));
+    f.field("Fy (" + Units.f() + ")", Units.F(init.fy()));
     while (true) {
       double[] v = f.ask(parent);
       if (v == null) return null;
@@ -42,15 +43,15 @@ final class LoadDialog {
         f.complain(parent, tr("load.forceOutside"));
         continue;
       }
-      return new ElementLoad.Force(init.loadCase(), v[0] / L, v[1] * 1e3, v[2] * 1e3, f.local());
+      return new ElementLoad.Force(init.loadCase(), v[0] / L, Units.fromF(v[1]), Units.fromF(v[2]), f.local());
     }
   }
 
   static ElementLoad couple(Component parent, Element e, ElementLoad.Couple init) {
-    double L = e.length();
+    double L = Units.L(e.length());
     Form f = new Form(tr("load.couple"), null, false);
     f.field(tr("load.position", Fmt.num(L)), init.t() * L);
-    f.field(tr("load.coupleValue"), init.c() / 1e3);
+    f.field(tr("load.coupleValue"), Units.M(init.c()));
     while (true) {
       double[] v = f.ask(parent);
       if (v == null) return null;
@@ -58,19 +59,19 @@ final class LoadDialog {
         f.complain(parent, tr("load.coupleOutside"));
         continue;
       }
-      return new ElementLoad.Couple(init.loadCase(), v[0] / L, v[1] * 1e3);
+      return new ElementLoad.Couple(init.loadCase(), v[0] / L, Units.fromM(v[1]));
     }
   }
 
   static ElementLoad distributed(Component parent, Element e, ElementLoad.Distributed init) {
-    double L = e.length();
+    double L = Units.L(e.length());
     Form f = new Form(tr("load.distributed"), tr("load.distributedLocal"), init.local());
     f.field(tr("load.start"), init.t1() * L);
     f.field(tr("load.end", Fmt.num(L)), init.t2() * L);
-    f.field(tr("load.qx1"), init.qx1() / 1e3);
-    f.field(tr("load.qy1"), init.qy1() / 1e3);
-    f.field(tr("load.qx2"), init.qx2() / 1e3);
-    f.field(tr("load.qy2"), init.qy2() / 1e3);
+    f.field(tr("load.qx1"), Units.Q(init.qx1()));
+    f.field(tr("load.qy1"), Units.Q(init.qy1()));
+    f.field(tr("load.qx2"), Units.Q(init.qx2()));
+    f.field(tr("load.qy2"), Units.Q(init.qy2()));
     while (true) {
       double[] v = f.ask(parent);
       if (v == null) return null;
@@ -78,28 +79,33 @@ final class LoadDialog {
         f.complain(parent, tr("load.range", Fmt.num(L)));
         continue;
       }
-      return new ElementLoad.Distributed(init.loadCase(), v[0] / L, Math.min(1, v[1] / L), v[2] * 1e3, v[3] * 1e3, v[4] * 1e3, v[5] * 1e3, f.local());
+      return new ElementLoad.Distributed(init.loadCase(), v[0] / L, Math.min(1, v[1] / L), Units.fromQ(v[2]), Units.fromQ(v[3]), Units.fromQ(v[4]), Units.fromQ(v[5]), f.local());
     }
   }
 
   /** One line for the properties panel. */
   static String describe(Element e, ElementLoad l) {
-    double L = e.length();
+    double L = Units.L(e.length());
     return switch (l) {
       case ElementLoad.Force f -> tr("load.describeForce", pair(f.fx(), f.fy()), Fmt.num(f.t() * L)) + (f.local() ? tr("load.describeLocal") : "");
-      case ElementLoad.Couple c -> tr("load.describeCouple", Fmt.kNm(c.c()), Fmt.num(c.t() * L));
+      case ElementLoad.Couple c -> tr("load.describeCouple", Fmt.moment(c.c()), Fmt.num(c.t() * L));
       case ElementLoad.Distributed d -> {
         boolean uniform = d.qx1() == d.qx2() && d.qy1() == d.qy2();
-        String values = uniform ? pair(d.qx1(), d.qy1()) : pair(d.qx1(), d.qy1()) + " → " + pair(d.qx2(), d.qy2());
+        String values = uniform ? pairQ(d.qx1(), d.qy1()) : pairQ(d.qx1(), d.qy1()) + " → " + pairQ(d.qx2(), d.qy2());
         String span = d.t1() == 0 && d.t2() == 1 ? "" : tr("load.describeSpan", Fmt.num(d.t1() * L), Fmt.num(d.t2() * L));
         yield tr("load.describeDistributed", values) + span + (d.local() ? tr("load.describeLocal") : "");
       }
     };
   }
 
-  /** (x ; y) in kN, from newtons. */
+  /** (x ; y) in the force unit, from newtons. */
   private static String pair(double x, double y) {
-    return tr("load.pair", Fmt.num(x / 1e3), Fmt.num(y / 1e3));
+    return tr("load.pair", Fmt.num(Units.F(x)), Fmt.num(Units.F(y)));
+  }
+
+  /** (x ; y) in force per length, from N/m. */
+  private static String pairQ(double x, double y) {
+    return tr("load.pair", Fmt.num(Units.Q(x)), Fmt.num(Units.Q(y)));
   }
 
   /** A column of number fields, and maybe the local-axes box. */
@@ -115,7 +121,7 @@ final class LoadDialog {
     }
 
     void field(String label, double value) {
-      JTextField t = new JTextField(Fmt.num(value).replace('−', '-'), 8);
+      JTextField t = new JTextField(Fmt.field(value), 8);
       panel.add(new JLabel(label));
       panel.add(t);
       fields.add(t);

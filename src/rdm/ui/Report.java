@@ -7,6 +7,7 @@ import java.util.List;
 import rdm.design.Design;
 import rdm.design.Design.Check;
 import rdm.i18n.Tr;
+import rdm.i18n.Units;
 import rdm.model.Combination;
 import rdm.model.Element;
 import rdm.model.Node;
@@ -59,7 +60,7 @@ final class Report {
     }
 
     b.append('\n').append(tr("report.reactions")).append('\n');
-    b.append(row(tr("col.node"), "Rx (kN)", "Ry (kN)", "Mz (kN·m)", tr("col.support")));
+    b.append(row(tr("col.node"), "Rx (" + Units.f() + ")", "Ry (" + Units.f() + ")", "Mz (" + Units.m() + ")", tr("col.support")));
     double sx = 0, sy = 0;
     for (int i = 0; i < s.nodes.size(); i++) {
       double[] r = sol.reaction[i];
@@ -67,19 +68,19 @@ final class Report {
       if (r == null || n.support == Support.NONE) continue;
       sx += r[0];
       sy += r[1];
-      b.append(row(Integer.toString(i + 1), Fmt.num(r[0] / 1e3), Fmt.num(r[1] / 1e3), Fmt.num(r[2] / 1e3), n.support.label()));
+      b.append(row(Integer.toString(i + 1), k(r[0]), k(r[1]), km(r[2]), n.support.label()));
     }
-    b.append(row("Σ", Fmt.num(sx / 1e3), Fmt.num(sy / 1e3), "", ""));
+    b.append(row("Σ", k(sx), k(sy), "", ""));
 
     b.append('\n').append(tr("report.ends")).append('\n');
-    b.append(row(tr("col.element"), "N₀ (kN)", tr("col.T0"), tr("col.M0"), "N₁ (kN)", tr("col.T1"), tr("col.M1")));
+    b.append(row(tr("col.element"), "N₀ (" + Units.f() + ")", tr("col.T0"), tr("col.M0"), "N₁ (" + Units.f() + ")", tr("col.T1"), tr("col.M1")));
     for (ElementResult r : sol.elements) {
-      b.append(row(Integer.toString(s.number(r.element)), k(r.N(0)), k(r.T(0)), k(r.M(0)), k(r.N(r.L)), k(r.T(r.L)), k(r.M(r.L))));
+      b.append(row(Integer.toString(s.number(r.element)), k(r.N(0)), k(r.T(0)), km(r.M(0)), k(r.N(r.L)), k(r.T(r.L)), km(r.M(r.L))));
     }
     b.append('\n').append(tr("report.maxima")).append('\n');
-    b.append(row(tr("col.element"), "|N| (kN)", tr("col.maxT"), tr("col.maxM"), "σmax (MPa)", tr("col.section")));
+    b.append(row(tr("col.element"), "|N| (" + Units.f() + ")", tr("col.maxT"), tr("col.maxM"), "σmax (MPa)", tr("col.section")));
     for (ElementResult r : sol.elements) {
-      b.append(row(Integer.toString(s.number(r.element)), k(r.maxAbsN()), k(r.maxAbsT()), k(r.maxAbsM()), Fmt.num(r.sigmaMax() / 1e6),
+      b.append(row(Integer.toString(s.number(r.element)), k(r.maxAbsN()), k(r.maxAbsT()), km(r.maxAbsM()), Fmt.num(r.sigmaMax() / 1e6),
           r.element.section.label()));
     }
     b.append('\n').append(tr("report.maxDisplacement", Fmt.mm(sol.maxDisplacement))).append('\n');
@@ -112,7 +113,7 @@ final class Report {
       double[] lo = env.minReaction[i], hi = env.maxReaction[i];
       Node n = s.nodes.get(i);
       if (lo == null || n.support == Support.NONE) continue;
-      b.append(row(Integer.toString(i + 1), k(lo[0]), k(hi[0]), k(lo[1]), k(hi[1]), k(lo[2]), k(hi[2]), n.support.label()));
+      b.append(row(Integer.toString(i + 1), k(lo[0]), k(hi[0]), k(lo[1]), k(hi[1]), km(lo[2]), km(hi[2]), n.support.label()));
     }
     b.append(tr("report.envelopeUnits")).append('\n');
 
@@ -124,8 +125,9 @@ final class Report {
       cells[0] = Integer.toString(s.number(e));
       int c = 1;
       for (Envelope.Effort q : Envelope.Effort.values()) {
-        cells[c++] = k(a.min(q)[a.lowest(q)]);
-        cells[c++] = k(a.max(q)[a.highest(q)]);
+        boolean mq = q == Envelope.Effort.M;
+        cells[c++] = mq ? km(a.min(q)[a.lowest(q)]) : k(a.min(q)[a.lowest(q)]);
+        cells[c++] = mq ? km(a.max(q)[a.highest(q)]) : k(a.max(q)[a.highest(q)]);
       }
       b.append(row(cells));
     }
@@ -147,7 +149,7 @@ final class Report {
           byS = k;
         }
       }
-      b.append(row(Integer.toString(s.number(e)), k(m), "C" + (byM + 1), Fmt.num(sigma / 1e6), "C" + (byS + 1), e.section.label()));
+      b.append(row(Integer.toString(s.number(e)), km(m), "C" + (byM + 1), Fmt.num(sigma / 1e6), "C" + (byS + 1), e.section.label()));
     }
     b.append('\n').append(tr("report.envelopeDisplacement", Fmt.mm(env.maxDisplacement), "C" + (env.maxDisplacementBy + 1))).append('\n');
     return b.toString();
@@ -179,18 +181,18 @@ final class Report {
     for (int i = 0; i < s.nodes.size(); i++) {
       NodeLoad l = s.nodes.get(i).load(bk.solution.loading);
       if (l.fx == 0 && l.fy == 0 && l.mz == 0) continue;
-      loads.append(row(Integer.toString(i + 1), k(l.fx * f), k(l.fy * f), k(l.mz * f)));
+      loads.append(row(Integer.toString(i + 1), k(l.fx * f), k(l.fy * f), km(l.mz * f)));
     }
     if (!loads.isEmpty()) {
       b.append('\n').append(tr("report.bucklingLoads")).append('\n');
-      b.append(row(tr("col.node"), "Fx (kN)", "Fy (kN)", "Mz (kN·m)")).append(loads);
+      b.append(row(tr("col.node"), "Fx (" + Units.f() + ")", "Fy (" + Units.f() + ")", "Mz (" + Units.m() + ")")).append(loads);
     }
 
     b.append('\n').append(tr("report.bucklingMembers")).append('\n');
-    b.append(row(tr("col.element"), "N (kN)", tr("col.Ncr"), tr("col.Lf"), tr("col.LfL"), tr("col.Lfi"), "π²EI/L²"));
+    b.append(row(tr("col.element"), "N (" + Units.f() + ")", tr("col.Ncr"), tr("col.Lf"), tr("col.LfL"), tr("col.Lfi"), "π²EI/L²"));
     for (Buckling.Member m : bk.members) {
       if (!m.compressed()) continue;
-      b.append(row(Integer.toString(s.number(m.element())), k(m.N()), k(m.critical(f)), Fmt.num(m.length(f)), Fmt.num(m.length(f) / m.L()),
+      b.append(row(Integer.toString(s.number(m.element())), k(m.N()), k(m.critical(f)), len(m.length(f)), Fmt.num(m.length(f) / m.L()),
           Fmt.num(m.slenderness(f)), k(m.euler())));
     }
     b.append(tr("report.bucklingEuler")).append('\n');
@@ -241,7 +243,7 @@ final class Report {
       Check g = worst.governing();
       Design.Worst w = worst.worst(g);
       b.append(g == Check.BUCKLING ? tr("report.governsBuckling", s.number(worst.element), Fmt.ratio(worst.ratio()), g, by(d.uls, w.by, "U"))
-          : tr("report.governs", s.number(worst.element), Fmt.ratio(worst.ratio()), g, by(d.uls, w.by, "U"), Fmt.num(w.x))).append('\n');
+          : tr("report.governs", s.number(worst.element), Fmt.ratio(worst.ratio()), g, by(d.uls, w.by, "U"), len(w.x))).append('\n');
     }
     b.append(failing.isEmpty() ? (worst == null ? tr("report.nothingChecked") : tr("report.strengthOk")) : tr("report.strengthFails", String.join(", ", failing)))
         .append('\n');
@@ -253,26 +255,26 @@ final class Report {
       Design.Worst w = m.worst(Check.BUCKLING);
       if (!m.checked() || !w.found()) continue;
       boolean given = m.element.bucklingFactor > 0;
-      buckling.append(row(Integer.toString(s.number(m.element)), k(-w.N), k(w.M), Double.isInfinite(w.Ncr) ? "∞" : k(w.Ncr),
-          Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr) + (given ? "" : "*"), Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr / m.element.length()),
+      buckling.append(row(Integer.toString(s.number(m.element)), k(-w.N), km(w.M), Double.isInfinite(w.Ncr) ? "∞" : k(w.Ncr),
+          Double.isInfinite(w.Ncr) ? "—" : len(w.Lcr) + (given ? "" : "*"), Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr / m.element.length()),
           Fmt.num(w.slenderness), String.valueOf(m.steel.curve), Fmt.num(w.chi), Fmt.num(w.kyy), Fmt.ratio(w.ratio), by(d.uls, w.by, "U")));
     }
     if (!buckling.isEmpty()) {
       b.append('\n').append(tr("report.inPlaneBuckling")).append('\n');
-      b.append(row(tr("col.element"), "N Ed (kN)", tr("col.MEd"), tr("col.Ncr"), "Lcr (m)", "Lcr/L", "λ̄", tr("col.curve"), "χ", "kyy", tr("col.ratio"),
+      b.append(row(tr("col.element"), "N Ed (" + Units.f() + ")", tr("col.MEd"), tr("col.Ncr"), "Lcr (" + Units.l() + ")", "Lcr/L", "λ̄", tr("col.curve"), "χ", "kyy", tr("col.ratio"),
           tr("col.in")));
       b.append(buckling);
       b.append(tr("report.bucklingLengths")).append('\n');
     }
 
     b.append('\n').append(tr("report.deflections", Fmt.num(s.deflectionLimit))).append('\n');
-    b.append(row(tr("col.span"), tr("col.elements"), "L (m)", "δ (mm)", tr("col.allowed"), "L/δ", tr("col.ratio"), tr("col.in")));
+    b.append(row(tr("col.span"), tr("col.elements"), "L (" + Units.l() + ")", "δ (mm)", tr("col.allowed"), "L/δ", tr("col.ratio"), tr("col.in")));
     List<String> sagging = new ArrayList<>();
     for (int i = 0; i < d.spans.size(); i++) {
       Design.Span sp = d.spans.get(i);
       String els = String.join("-", sp.elements.stream().map(e -> Integer.toString(s.number(e))).toList());
       double delta = Math.abs(sp.deflection);
-      b.append(row(Integer.toString(i + 1) + (sp.cantilever ? "c" : ""), els, Fmt.num(sp.length), Fmt.num(delta * 1e3), Fmt.num(sp.allowed * 1e3),
+      b.append(row(Integer.toString(i + 1) + (sp.cantilever ? "c" : ""), els, len(sp.length), Fmt.num(delta * 1e3), Fmt.num(sp.allowed * 1e3),
           delta < 1e-9 ? "—" : Fmt.num(Math.round((sp.cantilever ? 2 : 1) * sp.length / delta)), Fmt.ratio(sp.ratio()), by(d.sls, sp.by, "S")));
       if (sp.ratio() > 1) sagging.add(Integer.toString(i + 1));
     }
@@ -343,7 +345,7 @@ final class Report {
   static String csv(Buckling bk) {
     boolean comma = Tr.lang().decimal == ',';
     String sep = comma ? ";" : ",";
-    List<String> head = new ArrayList<>(List.of(tr("csv.element"), "x (m)", "X (m)", "Y (m)"));
+    List<String> head = new ArrayList<>(List.of(tr("csv.element"), "x (" + Units.l() + ")", "X (" + Units.l() + ")", "Y (" + Units.l() + ")"));
     for (int k = 0; k < bk.modes.size(); k++) {
       head.add(tr("csv.modeUx", k + 1, plain(bk.modes.get(k).factor, comma)));
       head.add(tr("csv.modeUy", k + 1));
@@ -354,8 +356,8 @@ final class Report {
       int steps = 5 * bk.parts;
       for (int i = 0; i <= steps; i++) {
         double x = r.L * i / steps;
-        b.append(n).append(sep).append(plain(x, comma)).append(sep).append(plain(r.element.a.x + r.c * x, comma)).append(sep)
-            .append(plain(r.element.a.y + r.s * x, comma));
+        b.append(n).append(sep).append(plain(Units.L(x), comma)).append(sep).append(plain(Units.L(r.element.a.x + r.c * x), comma)).append(sep)
+            .append(plain(Units.L(r.element.a.y + r.s * x), comma));
         for (Buckling.Mode m : bk.modes) {
           double[] d = m.displacement(r.element, x);
           b.append(sep).append(plain(d[0], comma)).append(sep).append(plain(d[1], comma));
@@ -370,7 +372,7 @@ final class Report {
   static String csv(Envelope env) {
     boolean comma = Tr.lang().decimal == ',';
     String sep = comma ? ";" : ",";
-    StringBuilder b = new StringBuilder(String.join(sep, tr("csv.element"), "x (m)", "X (m)", "Y (m)", "N min (kN)", "N max (kN)", tr("csv.Tmin"),
+    StringBuilder b = new StringBuilder(String.join(sep, tr("csv.element"), "x (" + Units.l() + ")", "X (" + Units.l() + ")", "Y (" + Units.l() + ")", "N min (" + Units.f() + ")", "N max (" + Units.f() + ")", tr("csv.Tmin"),
         tr("csv.Tmax"), tr("csv.Mmin"), tr("csv.Mmax")));
     b.append("\r\n");
     for (Element e : env.structure.elements) {
@@ -379,8 +381,12 @@ final class Report {
       String n = Integer.toString(env.structure.number(e));
       for (int i = 0; i < a.x.length; i++) {
         double x = a.x[i];
-        b.append(n).append(sep).append(plain(x, comma)).append(sep).append(plain(e.a.x + r.c * x, comma)).append(sep).append(plain(e.a.y + r.s * x, comma));
-        for (Envelope.Effort q : Envelope.Effort.values()) b.append(sep).append(plain(a.min(q)[i] / 1e3, comma)).append(sep).append(plain(a.max(q)[i] / 1e3, comma));
+        b.append(n).append(sep).append(plain(Units.L(x), comma)).append(sep).append(plain(Units.L(e.a.x + r.c * x), comma)).append(sep)
+            .append(plain(Units.L(e.a.y + r.s * x), comma));
+        for (Envelope.Effort q : Envelope.Effort.values()) {
+          java.util.function.DoubleUnaryOperator u = q == Envelope.Effort.M ? Units::M : Units::F;
+          b.append(sep).append(plain(u.applyAsDouble(a.min(q)[i]), comma)).append(sep).append(plain(u.applyAsDouble(a.max(q)[i]), comma));
+        }
         b.append("\r\n");
       }
     }
@@ -394,13 +400,14 @@ final class Report {
   static String csv(Solution sol) {
     boolean comma = Tr.lang().decimal == ',';
     String sep = comma ? ";" : ",";
-    StringBuilder b = new StringBuilder(String.join(sep, tr("csv.element"), "x (m)", "X (m)", "Y (m)", "N (kN)", tr("csv.T"), tr("csv.M"), "ux (mm)", "uy (mm)"));
+    StringBuilder b = new StringBuilder(String.join(sep, tr("csv.element"), "x (" + Units.l() + ")", "X (" + Units.l() + ")", "Y (" + Units.l() + ")", "N (" + Units.f() + ")", tr("csv.T"), tr("csv.M"), "ux (mm)", "uy (mm)"));
     b.append("\r\n");
     for (ElementResult r : sol.elements) {
       String n = Integer.toString(sol.structure.number(r.element));
       for (double x : r.samples(40)) {
         double[] d = r.displacement(x);
-        double[] v = {x, r.element.a.x + r.c * x, r.element.a.y + r.s * x, r.N(x) / 1e3, r.T(x) / 1e3, r.M(x) / 1e3, d[0] * 1e3, d[1] * 1e3};
+        double[] v = {Units.L(x), Units.L(r.element.a.x + r.c * x), Units.L(r.element.a.y + r.s * x), Units.F(r.N(x)), Units.F(r.T(x)), Units.M(r.M(x)),
+            d[0] * 1e3, d[1] * 1e3};
         b.append(n);
         for (double w : v) b.append(sep).append(plain(w, comma));
         b.append("\r\n");
@@ -416,8 +423,19 @@ final class Report {
     return comma ? s.replace('.', ',') : s;
   }
 
+  /** A force (N) in the force unit, without it. */
   private static String k(double v) {
-    return Fmt.num(v / 1e3);
+    return Fmt.num(Units.F(v));
+  }
+
+  /** A moment (N·m) in the moment unit, without it. */
+  private static String km(double v) {
+    return Fmt.num(Units.M(v));
+  }
+
+  /** A length (m) in the length unit, without it. */
+  private static String len(double v) {
+    return Fmt.num(Units.L(v));
   }
 
   private static String row(String... cells) {

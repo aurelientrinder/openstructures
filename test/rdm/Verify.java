@@ -1,5 +1,7 @@
 package rdm;
 
+import static rdm.i18n.Tr.tr;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -11,6 +13,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import rdm.i18n.Tr;
+import rdm.i18n.Units;
 import rdm.design.Design;
 import rdm.design.SteelSection;
 import rdm.io.StructureFile;
@@ -71,6 +74,7 @@ public final class Verify {
     sections();
     design();
     typedPoints();
+    units();
     texts();
     System.out.printf("%d checks, %d failure(s)%n", checks, failures);
     if (failures > 0) System.exit(1);
@@ -949,6 +953,24 @@ public final class Verify {
     } finally {
       Tr.use(was);
     }
+  }
+
+  /** The units shown: conversions both ways, and the texts written in them. */
+  static void units() {
+    try {
+      Units.use(Units.Length.MM, Units.Force.N);
+      check("mm, N: 1.5 m is 1500 mm", Units.L(1.5), 1500);
+      check("mm, N: 2 kN·m is 2e6 N·mm", Units.M(2e3), 2e6);
+      check("mm, N: 10 kN/m is 10 N/mm", Units.Q(10e3), 10);
+      check("mm, N: and back", Units.fromL(Units.L(0.37)) + Units.fromM(Units.M(123.4)) + Units.fromQ(Units.Q(5.5)), 0.37 + 123.4 + 5.5);
+      check("mm, N: a text in N·mm", tr("canvas.mz").contains("N·mm") ? 1 : 0, 1);
+      Units.use(Units.Length.CM, Units.Force.DAN);
+      check("cm, daN: 3 kN is 300 daN", Units.F(3e3), 300);
+      check("cm, daN: 1 kN·m is 10000 daN·cm", Units.M(1e3), 1e4);
+    } finally {
+      Units.use(Units.Length.M, Units.Force.KN);
+    }
+    check("m, kN: the texts as before", tr("load.qx1").contains("(kN/m)") ? 1 : 0, 1);
   }
 
   static void point(String what, double[] got, double x, double y) {

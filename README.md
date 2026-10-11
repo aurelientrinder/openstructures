@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver, the sections and the design checks against closed-form results, and the texts (456 checks)
+verify.cmd       :: the solver, the sections and the design checks against closed-form results, and the texts (464 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -163,8 +163,12 @@ leaves it to the system's display scale. **Settings › Language** picks English
 Both are kept between runs and apply when the app starts again: it offers to restart at once, keeping the
 drawing. A size can also be given for one run: `java -Dsun.java2d.uiScale=1.5 -jar rdm.jar`.
 
-Units: lengths in m, forces in kN, section dimensions in mm (A/I/v typed in: cm), E in MPa, ρ in kg/m³,
-imposed displacements in mm and mrad, spring stiffnesses in kN/m and kN·m/rad.
+**Settings › Units** picks the lengths' unit (m, cm or mm) and the forces' (N, daN or kN), at once and kept between
+runs: positions, lengths, loads, reactions, diagrams, the Results tab and the exports follow, moments in force × length
+(N·mm with mm and N) and distributed loads and spring stiffnesses in force / length (N/mm). The grid's steps follow
+the length unit (1 to 100 mm in mm), and the zoom goes from a building down to a fraction of a millimetre, so a
+small part can be drawn at its size. Whatever the units: section dimensions in mm (A/I/v typed in: cm), E and
+stresses in MPa, ρ in kg/m³, displacements in mm and rotations in mrad. Files are always in m and N.
 Files: `.rdm`, a plain text format described in `src/rdm/io/StructureFile.java` (version 5 adds the limit states,
 grades, buckling lengths and the deflection limit; version 4 has the load cases and combinations; older files open
 with every load in case G).

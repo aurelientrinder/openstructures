@@ -65,6 +65,7 @@ public final class Tr {
     String t = lang().text.get(key);
     if (t == null) t = Lang.EN.text.get(key);
     if (t == null) return key;
+    t = Units.fill(t);
     return args.length == 0 ? t : String.format(Locale.ROOT, t, args);
   }
 

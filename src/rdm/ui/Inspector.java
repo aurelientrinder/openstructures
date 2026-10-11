@@ -28,6 +28,7 @@ import javax.swing.JTextField;
 import javax.swing.Scrollable;
 import rdm.model.Combination;
 import rdm.design.Design;
+import rdm.i18n.Units;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 import rdm.model.Grade;
@@ -59,6 +60,12 @@ final class Inspector extends JPanel implements Scrollable {
     this.app = app;
     setLayout(new GridBagLayout());
     setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+  }
+
+  /** Builds the form again even if it shows the same thing (its labels changed: the units). */
+  void rebuildNow() {
+    shownFor = new Object();
+    refresh();
   }
 
   void refresh() {
@@ -191,8 +198,8 @@ final class Inspector extends JPanel implements Scrollable {
   private void node(Node n) {
     Structure s = app.structure();
     heading(tr("insp.node", s.number(n)));
-    number("x (m)", () -> n.x, v -> n.x = v);
-    number("y (m)", () -> n.y, v -> n.y = v);
+    number("x (" + Units.l() + ")", () -> Units.L(n.x), v -> n.x = Units.fromL(v));
+    number("y (" + Units.l() + ")", () -> Units.L(n.y), v -> n.y = Units.fromL(v));
     heading(tr("insp.support"));
     JComboBox<Support> sup = new JComboBox<>(Support.values());
     sup.setSelectedItem(n.support);
@@ -207,9 +214,9 @@ final class Inspector extends JPanel implements Scrollable {
     // a blocked component may settle; a skewed support's are along t and n, the others' along x and y
     String[] axis = n.support.skewed() ? new String[] {tr("insp.alongT"), tr("insp.alongN")} : new String[] {"ux", "uy"};
     if (n.support == Support.ELASTIQUE) {
-      number(tr("insp.stiffness", axis[0]), () -> n.springT / 1e3, v -> n.springT = v * 1e3);
-      number(tr("insp.stiffness", axis[1]), () -> n.springN / 1e3, v -> n.springN = v * 1e3);
-      number(tr("insp.rotationStiffness"), () -> n.springR / 1e3, v -> n.springR = v * 1e3);
+      number(tr("insp.stiffness", axis[0]), () -> Units.Q(n.springT), v -> n.springT = Units.fromQ(v));
+      number(tr("insp.stiffness", axis[1]), () -> Units.Q(n.springN), v -> n.springN = Units.fromQ(v));
+      number(tr("insp.rotationStiffness"), () -> Units.M(n.springR), v -> n.springR = Units.fromM(v));
     }
 
     // the loads and the imposed displacements: of the case shown, or of the combination's cases, factored
@@ -218,7 +225,7 @@ final class Inspector extends JPanel implements Scrollable {
     int i = s.nodes.indexOf(n);
     if (loading != null) {
       heading(c != null ? tr("insp.loadsIn", c.name) : tr("insp.loadsFactored"));
-      List<String> labels = new ArrayList<>(List.of("Fx (kN)", "Fy (kN)", "Mz (kN·m)"));
+      List<String> labels = new ArrayList<>(List.of("Fx (" + Units.f() + ")", "Fy (" + Units.f() + ")", "Mz (" + Units.m() + ")"));
       List<Integer> which = new ArrayList<>(List.of(0, 1, 2));
       if (n.support != Support.NONE && n.support != Support.ELASTIQUE) {
         if (n.support.t) {
@@ -261,21 +268,21 @@ final class Inspector extends JPanel implements Scrollable {
     }
   }
 
-  /** A node's load or imposed displacement w (0–2: Fx, Fy, Mz; 3–5: along t, n, rotation) as typed: kN, kN·m, mm, mrad. */
+  /** A node's load or imposed displacement w (0–2: Fx, Fy, Mz; 3–5: along t, n, rotation) as typed: the force and moment units, mm, mrad. */
   private static double shown(NodeLoad l, int w) {
     return switch (w) {
-      case 0 -> l.fx / 1e3;
-      case 1 -> l.fy / 1e3;
-      case 2 -> l.mz / 1e3;
+      case 0 -> Units.F(l.fx);
+      case 1 -> Units.F(l.fy);
+      case 2 -> Units.M(l.mz);
       default -> l.settle(w - 3) * 1e3;
     };
   }
 
   private static void set(NodeLoad l, int w, double v) {
     switch (w) {
-      case 0 -> l.fx = v * 1e3;
-      case 1 -> l.fy = v * 1e3;
-      case 2 -> l.mz = v * 1e3;
+      case 0 -> l.fx = Units.fromF(v);
+      case 1 -> l.fy = Units.fromF(v);
+      case 2 -> l.mz = Units.fromM(v);
       case 3 -> l.settleT = v / 1e3;
       case 4 -> l.settleN = v / 1e3;
       default -> l.settleR = v / 1e3;
@@ -287,7 +294,7 @@ final class Inspector extends JPanel implements Scrollable {
     Envelope env = app.envelope();
     if (!app.envelopeShown() || env.minReaction[i] == null) return "—";
     double lo = env.minReaction[i][k], hi = env.maxReaction[i][k];
-    return Fmt.num(lo / 1e3) + " … " + (moment ? Fmt.kNm(hi) : Fmt.kN(hi));
+    return Fmt.num(moment ? Units.M(lo) : Units.F(lo)) + " … " + (moment ? Fmt.moment(hi) : Fmt.force(hi));
   }
 
   /** A load not to change here: in a combination (factored) or with the envelope. */
@@ -349,13 +356,13 @@ final class Inspector extends JPanel implements Scrollable {
   private String reaction(int i, int k, boolean moment) {
     Solution sol = app.solution();
     if (!sol.ok() || sol.reaction[i] == null) return "—";
-    return moment ? Fmt.kNm(sol.reaction[i][k]) : Fmt.kN(sol.reaction[i][k]);
+    return moment ? Fmt.moment(sol.reaction[i][k]) : Fmt.force(sol.reaction[i][k]);
   }
 
   private void element(Element e) {
     Structure s = app.structure();
     heading(tr(e.isBar() ? "insp.bar" : "insp.beam", s.number(e), s.number(e.a), s.number(e.b)));
-    value(tr("insp.length"), () -> Fmt.num(e.length()) + " m");
+    value(tr("insp.length"), () -> Fmt.length(e.length()));
     check(tr("insp.hingeA"), () -> e.hingeA, v -> e.hingeA = v);
     check(tr("insp.hingeB"), () -> e.hingeB, v -> e.hingeB = v);
 
@@ -459,7 +466,7 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.rangeN"), () -> extremes(e, Envelope.Effort.N, false));
       value(tr("insp.rangeT"), () -> extremes(e, Envelope.Effort.V, false));
       value(tr("insp.rangeM"), () -> extremes(e, Envelope.Effort.M, true));
-      liveNote(() -> worst(e, tr("insp.maxM"), ElementResult::maxAbsM, Fmt::kNm));
+      liveNote(() -> worst(e, tr("insp.maxM"), ElementResult::maxAbsM, Fmt::moment));
       liveNote(() -> worst(e, tr("insp.sigma"), ElementResult::sigmaMax, Fmt::MPa));
     } else if (app.shown() == MainFrame.CHECKS) {
       if (app.checksShown()) checks(e);
@@ -468,17 +475,17 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.endsN"), () -> ends(e, ElementResult::N, false));
       value(tr("insp.endsT"), () -> ends(e, ElementResult::T, false));
       value(tr("insp.endsM"), () -> ends(e, ElementResult::M, true));
-      value(tr("insp.maxM"), () -> result(e, r -> Fmt.kNm(r.maxAbsM())));
+      value(tr("insp.maxM"), () -> result(e, r -> Fmt.moment(r.maxAbsM())));
       value(tr("insp.sigma"), () -> result(e, r -> Fmt.MPa(r.sigmaMax())));
     }
 
     // buckling: its compression at λcr of the first mode, its buckling length, and Euler's load of the element alone
     if (app.buckling() != null && app.buckling().ok()) {
       heading(tr("insp.bucklingElement"));
-      value(tr("insp.compression"), () -> member(e, m -> Fmt.kN(m.N())));
-      value(tr("insp.Ncr"), () -> member(e, m -> Fmt.kN(m.critical(app.buckling().factor()))));
-      value(tr("insp.Lf"), () -> member(e, m -> Fmt.num(m.length(app.buckling().factor())) + " m (" + Fmt.num(m.length(app.buckling().factor()) / m.L()) + " L)"));
-      value(tr("insp.euler"), () -> member(e, m -> Fmt.kN(m.euler())));
+      value(tr("insp.compression"), () -> member(e, m -> Fmt.force(m.N())));
+      value(tr("insp.Ncr"), () -> member(e, m -> Fmt.force(m.critical(app.buckling().factor()))));
+      value(tr("insp.Lf"), () -> member(e, m -> Fmt.length(m.length(app.buckling().factor())) + " (" + Fmt.num(m.length(app.buckling().factor()) / m.L()) + " L)"));
+      value(tr("insp.euler"), () -> member(e, m -> Fmt.force(m.euler())));
       note(tr("insp.bucklingElementHelp"), true);
     }
   }
@@ -511,7 +518,7 @@ final class Inspector extends JPanel implements Scrollable {
         Design.Worst w = m.worst(g);
         Design.Loads l = app.design().uls.get(w.by);
         String in = l.combination() == null ? tr("insp.asGiven") : l.name();
-        return g == Design.Check.BUCKLING ? tr("insp.governsBuckling", g, in) : tr("insp.governs", g, in, Fmt.num(w.x));
+        return g == Design.Check.BUCKLING ? tr("insp.governsBuckling", g, in) : tr("insp.governs", g, in, Fmt.num(Units.L(w.x)));
       });
       for (Design.Check c : Design.Check.values()) {
         value(c.toString(), () -> {
@@ -522,7 +529,7 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.Lcr"), () -> {
         Design.Member m = member(e);
         Design.Worst w = m == null || !m.checked() ? null : m.worst(Design.Check.BUCKLING);
-        return w == null || !w.found() || Double.isInfinite(w.Ncr) ? "—" : Fmt.num(w.Lcr) + " m, χ = " + Fmt.num(w.chi);
+        return w == null || !w.found() || Double.isInfinite(w.Ncr) ? "—" : Fmt.length(w.Lcr) + ", χ = " + Fmt.num(w.chi);
       });
     }
     value(tr("insp.deflection"), () -> {
@@ -550,7 +557,7 @@ final class Inspector extends JPanel implements Scrollable {
   private String ends(Element e, At q, boolean moment) {
     return result(e, r -> {
       double a = q.at(r, 0), b = q.at(r, r.L);
-      return moment ? Fmt.num(a / 1e3) + " / " + Fmt.kNm(b) : Fmt.num(a / 1e3) + " / " + Fmt.kN(b);
+      return moment ? Fmt.num(Units.M(a)) + " / " + Fmt.moment(b) : Fmt.num(Units.F(a)) + " / " + Fmt.force(b);
     });
   }
 
@@ -559,7 +566,7 @@ final class Inspector extends JPanel implements Scrollable {
     if (!app.envelopeShown()) return "—";
     Envelope.Along a = app.envelope().of(e);
     double lo = a.min(q)[a.lowest(q)], hi = a.max(q)[a.highest(q)];
-    return Fmt.num(lo / 1e3) + " … " + (moment ? Fmt.kNm(hi) : Fmt.kN(hi));
+    return Fmt.num(moment ? Units.M(lo) : Units.F(lo)) + " … " + (moment ? Fmt.moment(hi) : Fmt.force(hi));
   }
 
   /** The largest of a result over the combinations, and the combination that gives it. */
@@ -662,13 +669,13 @@ final class Inspector extends JPanel implements Scrollable {
 
   /** A number field: committed (one undo step) on Enter or when it loses the focus. */
   private void number(String label, DoubleSupplier get, DoubleConsumer set) {
-    JTextField f = new JTextField(Fmt.num(get.getAsDouble()).replace('−', '-'), 8);
+    JTextField f = new JTextField(Fmt.field(get.getAsDouble()), 8);
     Runnable commit = () -> {
       try {
         double v = Fmt.parse(f.getText());
         if (v != get.getAsDouble()) app.edit(() -> set.accept(v));
       } catch (NumberFormatException ex) {
-        f.setText(Fmt.num(get.getAsDouble()).replace('−', '-'));
+        f.setText(Fmt.field(get.getAsDouble()));
       }
     };
     f.addActionListener(e -> commit.run());
@@ -679,7 +686,7 @@ final class Inspector extends JPanel implements Scrollable {
       }
     });
     updaters.add(() -> {
-      if (!f.isFocusOwner()) f.setText(Fmt.num(get.getAsDouble()).replace('−', '-'));
+      if (!f.isFocusOwner()) f.setText(Fmt.field(get.getAsDouble()));
     });
     field(label, f);
   }

@@ -28,6 +28,7 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import rdm.design.Design;
+import rdm.i18n.Units;
 import rdm.model.Element;
 import rdm.model.ElementLoad;
 import rdm.model.LoadCase;
@@ -131,7 +132,7 @@ final class StructureCanvas extends JPanel {
       public void mouseWheelMoved(MouseWheelEvent e) {
         double k = Math.pow(1.15, -e.getPreciseWheelRotation());
         double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
-        scale = Math.max(2, Math.min(5000, scale * k));
+        scale = Math.max(0.01, Math.min(2e6, scale * k));
         ox = e.getX() - wx * scale;
         oy = e.getY() + wy * scale;
         repaint();
@@ -229,13 +230,20 @@ final class StructureCanvas extends JPanel {
     double[] b = app.structure().bounds();
     int w = Math.max(getWidth(), 600), h = Math.max(getHeight(), 400);
     if (b == null) {
-      scale = 80;
+      // 80 px for a metre, 10 cm or 5 cm: a drawing to begin in the unit chosen
+      scale = switch (Units.length()) {
+        case M -> 80;
+        case CM -> 800;
+        case MM -> 1600;
+      };
       ox = 80;
       oy = h - 80;
     } else {
       // more room above than below: the titles are written at the top, over the labels of loads on the top nodes
       double top = 140, bottom = 100;
-      double bw = Math.max(b[2] - b[0], 1), bh = Math.max(b[3] - b[1], 1);
+      // a line has no width: as wide as a tenth of its length (a single node: a metre)
+      double ext = Math.max(b[2] - b[0], b[3] - b[1]), least = ext > 0 ? ext / 10 : 1;
+      double bw = Math.max(b[2] - b[0], least), bh = Math.max(b[3] - b[1], least);
       scale = Math.min((w - 200) / bw, (h - top - bottom) / bh);
       ox = w / 2.0 - (b[0] + b[2]) / 2 * scale;
       oy = top + (h - top - bottom - (b[3] - b[1]) * scale) / 2 + b[3] * scale;
@@ -294,10 +302,13 @@ final class StructureCanvas extends JPanel {
     return app.tool() == Tool.NODE && app.selection() instanceof Node n ? new double[] {n.x, n.y} : null;
   }
 
-  /** The point the field holds, or null. */
+  /** The point the field holds (m), or null; it is typed in the length unit. */
   private double[] typedPoint() {
     if (!entry.isVisible() || !places()) return null;
-    return PointEntry.parse(entry.getText(), lastPoint(), new double[] {toWorldX(mouseX), toWorldY(mouseY)});
+    double[] last = lastPoint();
+    double[] p = PointEntry.parse(entry.getText(), last == null ? null : new double[] {Units.L(last[0]), Units.L(last[1])},
+        new double[] {Units.L(toWorldX(mouseX)), Units.L(toWorldY(mouseY))});
+    return p == null ? null : new double[] {Units.fromL(p[0]), Units.fromL(p[1])};
   }
 
   /** Enter: the point typed is placed as if clicked there (exactly, not on the grid); the field stays for the next. */
@@ -420,11 +431,12 @@ final class StructureCanvas extends JPanel {
           return;
         }
         NodeLoad now = node.load(c);
-        double[] v = ask(tr("canvas.nodeForce", s.number(node), c.name), new String[] {"Fx (kN)", "Fy (kN)"}, new double[] {now.fx / 1e3, now.fy / 1e3});
+        double[] v = ask(tr("canvas.nodeForce", s.number(node), c.name), new String[] {"Fx (" + Units.f() + ")", "Fy (" + Units.f() + ")"},
+            new double[] {Units.F(now.fx), Units.F(now.fy)});
         if (v != null) app.edit(() -> {
           NodeLoad l = node.loadIn(c);
-          l.fx = v[0] * 1e3;
-          l.fy = v[1] * 1e3;
+          l.fx = Units.fromF(v[0]);
+          l.fy = Units.fromF(v[1]);
         });
         app.select(node);
       }
@@ -436,8 +448,8 @@ final class StructureCanvas extends JPanel {
           addOnElement(el, LoadDialog.couple(this, el, new ElementLoad.Couple(c, along(el, (Double) hit[1]), 10e3)));
           return;
         }
-        double[] v = ask(tr("canvas.nodeMoment", s.number(node), c.name), new String[] {tr("canvas.mz")}, new double[] {node.load(c).mz / 1e3});
-        if (v != null) app.edit(() -> node.loadIn(c).mz = v[0] * 1e3);
+        double[] v = ask(tr("canvas.nodeMoment", s.number(node), c.name), new String[] {tr("canvas.mz")}, new double[] {Units.M(node.load(c).mz)});
+        if (v != null) app.edit(() -> node.loadIn(c).mz = Units.fromM(v[0]));
         app.select(node);
       }
       case DISTRIBUTED -> {
@@ -512,7 +524,7 @@ final class StructureCanvas extends JPanel {
     JTextField[] fields = new JTextField[labels.length];
     for (int i = 0; i < labels.length; i++) {
       p.add(new JLabel(labels[i]));
-      fields[i] = new JTextField(Fmt.num(values[i]).replace('−', '-'), 8);
+      fields[i] = new JTextField(Fmt.field(values[i]), 8);
       p.add(fields[i]);
     }
     while (true) {
@@ -551,8 +563,8 @@ final class StructureCanvas extends JPanel {
       double x = (Double) hit[1] * e.length();
       Envelope env = app.envelope();
       double[] n = env.range(e, Envelope.Effort.N, x), t = env.range(e, Envelope.Effort.V, x), m = env.range(e, Envelope.Effort.M, x);
-      return tr("canvas.readEnvelope", s.number(e), Fmt.num(x), Fmt.num(n[0] / 1e3), Fmt.kN(n[1]), Fmt.num(t[0] / 1e3), Fmt.kN(t[1]),
-          Fmt.num(m[0] / 1e3), Fmt.kNm(m[1]));
+      return tr("canvas.readEnvelope", s.number(e), Fmt.num(Units.L(x)), Fmt.num(Units.F(n[0])), Fmt.force(n[1]), Fmt.num(Units.F(t[0])),
+          Fmt.force(t[1]), Fmt.num(Units.M(m[0])), Fmt.moment(m[1]));
     }
     Node n = nodeAt(px, py);
     if (n != null) {
@@ -564,7 +576,7 @@ final class StructureCanvas extends JPanel {
     ElementResult r = sol.of((Element) hit[0]);
     double x = (Double) hit[1] * r.L;
     double[] d = r.displacement(x);
-    return tr("canvas.readElement", s.number(r.element), Fmt.num(x), Fmt.kN(r.N(x)), Fmt.kN(r.T(x)), Fmt.kNm(r.M(x)), Fmt.mm(Math.hypot(d[0], d[1])));
+    return tr("canvas.readElement", s.number(r.element), Fmt.num(Units.L(x)), Fmt.force(r.N(x)), Fmt.force(r.T(x)), Fmt.moment(r.M(x)), Fmt.mm(Math.hypot(d[0], d[1])));
   }
 
   // ——— painting ———
@@ -650,7 +662,7 @@ final class StructureCanvas extends JPanel {
       g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[] {6, 4}, 0));
       g.draw(new Line2D.Double(sx(chain[0]), sy(chain[1]), sx(p[0]), sy(p[1])));
       double l = Math.hypot(p[0] - chain[0], p[1] - chain[1]), a = Math.toDegrees(Math.atan2(p[1] - chain[1], p[0] - chain[0]));
-      g.drawString(Fmt.num(l) + " m  " + Fmt.num(Math.round(a * 100) / 100.0) + "°", (float) sx(p[0]) + 12, (float) sy(p[1]) - 8);
+      g.drawString(Fmt.length(l) + "  " + Fmt.num(Math.round(a * 100) / 100.0) + "°", (float) sx(p[0]) + 12, (float) sy(p[1]) - 8);
     }
     if (typed != null) {
       g.setColor(SELECT);
@@ -658,7 +670,7 @@ final class StructureCanvas extends JPanel {
       double x = sx(typed[0]), y = sy(typed[1]);
       g.draw(new Line2D.Double(x - 6, y, x + 6, y));
       g.draw(new Line2D.Double(x, y - 6, x, y + 6));
-      if (chain == null) g.drawString("(" + Fmt.num(typed[0]) + " ; " + Fmt.num(typed[1]) + ")", (float) x + 10, (float) y - 8);
+      if (chain == null) g.drawString("(" + Fmt.num(Units.L(typed[0])) + " ; " + Fmt.num(Units.L(typed[1])) + ") " + Units.l(), (float) x + 10, (float) y - 8);
     }
   }
 
@@ -821,12 +833,12 @@ final class StructureCanvas extends JPanel {
         double ux = l.fx / f, uy = -l.fy / f;
         g.setStroke(new BasicStroke(2f));
         Symbols.arrow(g, x - ux * 50, y - uy * 50, x - ux * 4, y - uy * 4);
-        label(g, Fmt.kN(f), x - ux * 58, y - uy * 58);
+        label(g, Fmt.force(f), x - ux * 58, y - uy * 58);
       }
       if (Math.abs(l.mz) > 1e-9) {
         g.setStroke(new BasicStroke(2f));
         Symbols.moment(g, x, y, 20, l.mz > 0);
-        label(g, Fmt.kNm(Math.abs(l.mz)), x + 22, y - 22);
+        label(g, Fmt.moment(Math.abs(l.mz)), x + 22, y - 22);
       }
     }
     for (Element e : s.elements) for (ElementLoad l : factored(e, loading, app.shownCombination() != null)) paintLoad(g, e, l);
@@ -879,13 +891,13 @@ final class StructureCanvas extends JPanel {
         double x = ax + f.t() * (bx - ax), y = ay + f.t() * (by - ay), ux = v[0] / m, uy = -v[1] / m;
         g.setStroke(new BasicStroke(2f));
         Symbols.arrow(g, x - ux * 50, y - uy * 50, x - ux * 3, y - uy * 3);
-        label(g, Fmt.kN(m), x - ux * 58, y - uy * 58);
+        label(g, Fmt.force(m), x - ux * 58, y - uy * 58);
       }
       case ElementLoad.Couple c -> {
         double x = ax + c.t() * (bx - ax), y = ay + c.t() * (by - ay);
         g.setStroke(new BasicStroke(2f));
         Symbols.moment(g, x, y, 16, c.c() > 0);
-        label(g, Fmt.kNm(Math.abs(c.c())), x + 18, y - 22);
+        label(g, Fmt.moment(Math.abs(c.c())), x + 18, y - 22);
       }
       case ElementLoad.Distributed d -> {
         // arrows as long as the load where they stand (the larger end at 32 px), tips on the element
@@ -913,8 +925,8 @@ final class StructureCanvas extends JPanel {
         g.draw(new Line2D.Double(x1, y1, x1 - q1[0] * px, y1 + q1[1] * px));
         g.draw(new Line2D.Double(x2, y2, x2 - q2[0] * px, y2 + q2[1] * px));
         boolean uniform = q1[0] == q2[0] && q1[1] == q2[1];
-        String text = uniform ? Fmt.num(Math.hypot(q1[0], q1[1]) / 1e3) + " kN/m"
-            : Fmt.num(Math.hypot(q1[0], q1[1]) / 1e3) + " → " + Fmt.num(Math.hypot(q2[0], q2[1]) / 1e3) + " kN/m";
+        String text = uniform ? Fmt.num(Units.Q(Math.hypot(q1[0], q1[1]))) + " " + Units.q()
+            : Fmt.num(Units.Q(Math.hypot(q1[0], q1[1]))) + " → " + Fmt.num(Units.Q(Math.hypot(q2[0], q2[1]))) + " " + Units.q();
         double mx = (x1 + x2) / 2, my = (y1 + y2) / 2, qm = Math.hypot(q1[0] + q2[0], q1[1] + q2[1]);
         double ox = qm == 0 ? 0 : (q1[0] + q2[0]) / qm, oy = qm == 0 ? 1 : -(q1[1] + q2[1]) / qm;
         label(g, text, mx - ox * 44, my - oy * 44);
@@ -935,16 +947,16 @@ final class StructureCanvas extends JPanel {
       if (Math.abs(r[0]) > tiny) {
         double ux = Math.signum(r[0]);
         Symbols.arrow(g, x - ux * 55, y + 34, x - ux * 12, y + 34);
-        labelAway(g, "Rx = " + Fmt.kN(r[0]), x - ux * 60, y + 64, 0, 14);
+        labelAway(g, "Rx = " + Fmt.force(r[0]), x - ux * 60, y + 64, 0, 14);
       }
       if (Math.abs(r[1]) > tiny) {
         double uy = -Math.signum(r[1]);
         Symbols.arrow(g, x + 30, y - uy * 55, x + 30, y - uy * 12);
-        labelAway(g, "Ry = " + Fmt.kN(r[1]), x + 34, y - uy * 62, 0, -uy * 14);
+        labelAway(g, "Ry = " + Fmt.force(r[1]), x + 34, y - uy * 62, 0, -uy * 14);
       }
       if (Math.abs(r[2]) > tiny) {
         Symbols.moment(g, x, y, 30, r[2] > 0);
-        labelAway(g, "Mz = " + Fmt.kNm(r[2]), x - 34, y - 38, 0, -14);
+        labelAway(g, "Mz = " + Fmt.moment(r[2]), x - 34, y - 38, 0, -14);
       }
     }
   }
@@ -966,7 +978,7 @@ final class StructureCanvas extends JPanel {
       for (int j = 0; j < 3; j++) {
         if (Math.abs(lo[j]) <= tiny && Math.abs(hi[j]) <= tiny) continue;
         double way = Math.abs(hi[j]) >= Math.abs(lo[j]) ? Math.signum(hi[j]) : Math.signum(lo[j]);
-        String text = names[j] + " = " + Fmt.num(lo[j] / 1e3) + " … " + (j == 2 ? Fmt.kNm(hi[j]) : Fmt.kN(hi[j]));
+        String text = names[j] + " = " + Fmt.num(shown(lo[j], j == 2)) + " … " + (j == 2 ? Fmt.moment(hi[j]) : Fmt.force(hi[j]));
         if (j == 0) {
           // a range is long: under the node, not beyond the arrow's tail (off the drawing at the edge)
           Symbols.arrow(g, x - way * 55, y + 34, x - way * 12, y + 34);
@@ -1069,7 +1081,8 @@ final class StructureCanvas extends JPanel {
       case T -> ElementResult::T;
       default -> ElementResult::M;
     };
-    String unit = d == MainFrame.Diagram.M ? " kN·m" : " kN";
+    boolean moment = d == MainFrame.Diagram.M;
+    String unit = " " + (moment ? Units.m() : Units.f());
     Color color = diagramColor(d);
     double max = 0;
     for (ElementResult r : sol.elements) {
@@ -1101,23 +1114,23 @@ final class StructureCanvas extends JPanel {
       // the values are written last (paintTags), where they don't cover the loads' and reactions' labels
       double v0 = q.at(r, 0), v1 = q.at(r, r.L);
       if (Math.abs(v0 - v1) < 1e-9 * max && Math.abs(q.at(r, r.L / 2) - v0) < 1e-9 * max) {
-        tags.add(new Tag(r, r.L / 2, v0, px, unit, max, color));
+        tags.add(new Tag(r, r.L / 2, v0, px, moment, max, color));
       } else {
-        tags.add(new Tag(r, 0, v0, px, unit, max, color));
-        tags.add(new Tag(r, r.L, v1, px, unit, max, color));
+        tags.add(new Tag(r, 0, v0, px, moment, max, color));
+        tags.add(new Tag(r, r.L, v1, px, moment, max, color));
       }
       if (d == MainFrame.Diagram.M) {
         // the largest |Mf| inside the element, unless the ends already say it
         double peak = -1;
         for (double x : r.extremaM()) if (x > 1e-6 * r.L && x < r.L * (1 - 1e-6) && (peak < 0 || Math.abs(r.M(x)) > Math.abs(r.M(peak)))) peak = x;
         if (peak > 0 && Math.abs(r.M(peak) - v0) > 0.01 * max && Math.abs(r.M(peak) - v1) > 0.01 * max) {
-          tags.add(new Tag(r, peak, r.M(peak), px, unit, max, color));
+          tags.add(new Tag(r, peak, r.M(peak), px, moment, max, color));
         }
       }
     }
     g.setColor(color);
     g.setFont(g.getFont().deriveFont(Font.BOLD));
-    g.drawString(d + " (max " + Fmt.num(max / 1e3) + unit + ")", 12, 38);
+    g.drawString(d + " (max " + Fmt.num(shown(max, moment)) + unit + ")", 12, 38);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 
@@ -1136,7 +1149,8 @@ final class StructureCanvas extends JPanel {
   private void paintEnvelope(Graphics2D g, Envelope env) {
     MainFrame.Diagram d = app.diagram;
     Envelope.Effort q = d == MainFrame.Diagram.N ? Envelope.Effort.N : d == MainFrame.Diagram.T ? Envelope.Effort.V : Envelope.Effort.M;
-    String unit = d == MainFrame.Diagram.M ? " kN·m" : " kN";
+    boolean moment = d == MainFrame.Diagram.M;
+    String unit = " " + (moment ? Units.m() : Units.f());
     Color color = diagramColor(d);
     double max = 0, top = Double.NEGATIVE_INFINITY, bottom = Double.POSITIVE_INFINITY;
     for (Element e : app.structure().elements) {
@@ -1188,27 +1202,32 @@ final class StructureCanvas extends JPanel {
         boolean constant = true;
         for (double v : curve) constant &= Math.abs(v - v0) < 1e-9 * max;
         if (constant) {
-          tags.add(new Tag(r, r.L / 2, v0, px, unit, max, color));
+          tags.add(new Tag(r, r.L / 2, v0, px, moment, max, color));
           continue;
         }
-        tags.add(new Tag(r, 0, v0, px, unit, max, color));
-        tags.add(new Tag(r, r.L, v1, px, unit, max, color));
+        tags.add(new Tag(r, 0, v0, px, moment, max, color));
+        tags.add(new Tag(r, r.L, v1, px, moment, max, color));
         // the curve's peak inside the element (the largest of the maxima, the smallest of the minima), unless the ends say it
         int peak = curve == hi ? a.highest(q) : a.lowest(q);
         double v = curve[peak];
         if (a.x[peak] > 1e-6 * r.L && a.x[peak] < r.L * (1 - 1e-6) && Math.abs(v - v0) > 0.01 * max && Math.abs(v - v1) > 0.01 * max) {
-          tags.add(new Tag(r, a.x[peak], v, px, unit, max, color));
+          tags.add(new Tag(r, a.x[peak], v, px, moment, max, color));
         }
       }
     }
     g.setColor(color);
     g.setFont(g.getFont().deriveFont(Font.BOLD));
-    g.drawString(tr("canvas.envelope", d, Fmt.num(top / 1e3), Fmt.num(bottom / 1e3) + unit), 12, 38);
+    g.drawString(tr("canvas.envelope", d, Fmt.num(shown(top, moment)), Fmt.num(shown(bottom, moment)) + unit), 12, 38);
     g.setFont(g.getFont().deriveFont(Font.PLAIN));
   }
 
-  /** A value of the diagram to write: at x along the element, beside the diagram. */
-  private record Tag(ElementResult r, double x, double v, double px, String unit, double max, Color color) {}
+  /** A value of the diagram to write: at x along the element, beside the diagram; a moment or a force. */
+  private record Tag(ElementResult r, double x, double v, double px, boolean moment, double max, Color color) {}
+
+  /** A force (N) or a moment (N·m) in its unit. */
+  private static double shown(double v, boolean moment) {
+    return moment ? Units.M(v) : Units.F(v);
+  }
 
   private final List<Tag> tags = new java.util.ArrayList<>();
   /** the labels written so far in this painting */
@@ -1225,7 +1244,7 @@ final class StructureCanvas extends JPanel {
       ElementResult r = t.r;
       // labels at the ends a little inside the element, so that neighbours don't write over each other
       double x0 = Math.max(r.L * 0.12, Math.min(r.L * 0.88, t.x));
-      String text = Fmt.num(t.v / 1e3) + t.unit;
+      String text = Fmt.num(shown(t.v, t.moment)) + " " + (t.moment ? Units.m() : Units.f());
       double X = Double.NaN, Y = 0;
       // further from the element, then a little along it towards its middle, until the place is free
       search:

@@ -213,7 +213,7 @@ final class SectionDialog extends JDialog {
     }).forEach((label, list) -> put(new JLabel(label), list));
     for (int i = 0; i < k.params.size(); i++) {
       int which = i;
-      JTextField f = new JTextField(Fmt.num(current.param(i)).replace('−', '-'), 7);
+      JTextField f = new JTextField(Fmt.field(current.param(i)), 7);
       f.getDocument().addDocumentListener(new DocumentListener() {
         private void typed() {
           try {
