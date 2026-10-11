@@ -332,6 +332,7 @@ public final class MainFrame extends JFrame {
   void setTool(Tool t) {
     tool = t;
     canvas.cancelChain();
+    if (t != Tool.BEAM && t != Tool.BAR && t != Tool.NODE) canvas.closeEntry();
     AbstractButton b = toolButtons.get(t);
     if (b != null) b.setSelected(true);
     hint.setText(t.help());

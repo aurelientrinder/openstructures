@@ -38,7 +38,7 @@ The system packages carry their own Java: nothing else to install.
 ```bat
 run.cmd          :: builds rdm.jar and starts it
 build.cmd        :: only builds rdm.jar (then: java -jar rdm.jar [file.rdm], or double-click it)
-verify.cmd       :: the solver, the sections and the design checks against closed-form results, and the texts (436 checks)
+verify.cmd       :: the solver, the sections and the design checks against closed-form results, and the texts (456 checks)
 ```
 
 On Linux or macOS (or anywhere with a JDK 21+), without the scripts:
@@ -56,14 +56,20 @@ javac -encoding UTF-8 -d out/test $(find src test -name '*.java') && java -cp ou
 | Tool (key) | What it does |
 | --- | --- |
 | Select (S) — *Sélection* | select a node or an element, drag a node |
-| Node (N) — *Nœud* | place a node; on an element, cuts it in two |
-| Beam (P) / Bar (B) — *Poutre / Barre* | click two points; chains on, Esc or right-click stops. A bar is hinged at both ends |
+| Node (N) — *Nœud* | place a node; on an element, cuts it in two. Or type its coordinates |
+| Beam (P) / Bar (B) — *Poutre / Barre* | click two points; chains on, Esc or right-click stops. A bar is hinged at both ends. Or type the points |
 | Fixed support (E), Pin (D), Roller (R), Slider (G) — *Encastrement, Pivot, Appui simple, Glissière* | click a node (again: removes it). The normal of a roller or slider is set in the properties, and so is an imposed displacement of what it blocks (a support that settles) |
 | Spring support (K) — *Appui élastique* | click a node: springs along t, n and in rotation, stiffnesses in the properties |
 | Force (F), Moment (M) — *Force, Couple* | click a node, or a point of an element (anywhere along it, no node needed); type the values (kN, kN·m, counter-clockwise positive) |
 | Distributed load (Q) — *Charge répartie* | click an element: a load in kN per metre of element, uniform or linear (triangle, trapezoid), on all of it or part, on the global axes or the element's |
 | Hinge (H) — *Rotule* | click an element near one end: hinge there |
 | Delete (X) — *Effacer* | click a node or an element; Del deletes the selection |
+
+**Typing points.** With Node, Beam or Bar, type a number (or @) and a field opens under the drawing: `x y` is a
+point in m, `@dx dy` a point from the last one, `L<a` a length L at a degrees (counter-clockwise from x), and a
+length alone goes towards the pointer, as in CAD. Enter places the point exactly (off the grid if need be) and keeps
+the field open for the next one; Esc closes it. The numbers are separated by a space or ";" (and "," in English;
+in French "2,5" is a decimal).
 
 The keys are the same in both languages. Right or middle drag pans, the wheel zooms. Hover the structure to read
 N, V, M and the displacement at that point in the status bar. Ctrl+Z / Ctrl+Y undo and redo. File › Examples has

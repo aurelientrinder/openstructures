@@ -62,8 +62,12 @@ final class StructureCanvas extends JPanel {
   private final MainFrame app;
   /** pixels per metre, and the screen position of the world origin */
   private double scale = 80, ox = 100, oy = 500;
-  /** the line tools' last point (world), null when no line is being drawn */
+  /** the line tools' last point (world), null when no line is being drawn; typed: kept exactly, not on the grid */
   private double[] chain;
+  private boolean chainTyped;
+  /** where a point is typed while drawing (PointEntry), with what it understands written above it; hidden otherwise */
+  private final JTextField entry = new JTextField(16);
+  private final JLabel entryHint = new JLabel();
   private double mouseX, mouseY;
   private Node dragging;
   private boolean dragged;
@@ -136,10 +140,48 @@ final class StructureCanvas extends JPanel {
     addMouseListener(m);
     addMouseMotionListener(m);
     addMouseWheelListener(m);
+    setLayout(null);
+    entry.setVisible(false);
+    entryHint.setVisible(false);
+    entryHint.setOpaque(true);
+    entryHint.setBackground(new Color(255, 255, 255, 230));
+    entryHint.setForeground(Color.DARK_GRAY);
+    add(entry);
+    add(entryHint);
+    entry.addActionListener(e -> typed());
+    entry.addKeyListener(new KeyAdapter() {
+      @Override
+      public void keyPressed(KeyEvent e) {
+        if (e.getKeyCode() == KeyEvent.VK_ESCAPE) closeEntry();
+      }
+    });
+    entry.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+      @Override
+      public void insertUpdate(javax.swing.event.DocumentEvent e) {
+        repaint();
+      }
+
+      @Override
+      public void removeUpdate(javax.swing.event.DocumentEvent e) {
+        repaint();
+      }
+
+      @Override
+      public void changedUpdate(javax.swing.event.DocumentEvent e) {
+        repaint();
+      }
+    });
     addKeyListener(new KeyAdapter() {
       @Override
       public void keyPressed(KeyEvent e) {
         if (e.isControlDown()) return;
+        // a number, or @, starts typing a point with the tools that place points
+        char k = e.getKeyChar();
+        if (places() && (Character.isDigit(k) || "@-.".indexOf(k) >= 0)) {
+          openEntry(String.valueOf(k));
+          e.consume();
+          return;
+        }
         if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
           if (chain != null) cancelChain();
           else app.setTool(Tool.SELECT);
@@ -206,6 +248,77 @@ final class StructureCanvas extends JPanel {
     repaint();
   }
 
+  // ——— typed points ———
+
+  /** The tool places points: a point can be typed. */
+  private boolean places() {
+    Tool t = app.tool();
+    return t == Tool.BEAM || t == Tool.BAR || t == Tool.NODE;
+  }
+
+  private void openEntry(String start) {
+    entryHint.setText(" " + tr("canvas.typeHint") + " ");
+    layoutEntry();
+    entry.setText(start);
+    entry.setVisible(true);
+    entryHint.setVisible(true);
+    entry.requestFocusInWindow();
+    repaint();
+  }
+
+  /** Hides the field (Esc, another tool), the focus back on the drawing. */
+  void closeEntry() {
+    if (!entry.isVisible()) return;
+    entry.setVisible(false);
+    entryHint.setVisible(false);
+    requestFocusInWindow();
+    repaint();
+  }
+
+  private void layoutEntry() {
+    var size = entry.getPreferredSize();
+    int y = getHeight() - size.height - 12;
+    entry.setBounds(12, y, Math.max(size.width, 160), size.height);
+    var hint = entryHint.getPreferredSize();
+    entryHint.setBounds(12, y - hint.height - 2, Math.min(hint.width, getWidth() - 24), hint.height);
+  }
+
+  @Override
+  public void doLayout() {
+    if (entry.isVisible()) layoutEntry();
+  }
+
+  /** The last point a typed one is measured from: the line's, or with the node tool the node selected. */
+  private double[] lastPoint() {
+    if (chain != null) return chain;
+    return app.tool() == Tool.NODE && app.selection() instanceof Node n ? new double[] {n.x, n.y} : null;
+  }
+
+  /** The point the field holds, or null. */
+  private double[] typedPoint() {
+    if (!entry.isVisible() || !places()) return null;
+    return PointEntry.parse(entry.getText(), lastPoint(), new double[] {toWorldX(mouseX), toWorldY(mouseY)});
+  }
+
+  /** Enter: the point typed is placed as if clicked there (exactly, not on the grid); the field stays for the next. */
+  private void typed() {
+    double[] t = typedPoint();
+    if (t == null) {
+      java.awt.Toolkit.getDefaultToolkit().beep();
+      return;
+    }
+    // without the float noise of an angle (cos 90° is 6e-17)
+    double[] p = {clean(t[0]), clean(t[1])};
+    if (app.tool() == Tool.NODE) {
+      Structure s = app.structure();
+      app.edit(() -> app.select(nodeFor(s, p[0], p[1], true)));
+    } else {
+      linePoint(p, true);
+    }
+    entry.setText("");
+    repaint();
+  }
+
   // ——— hit testing ———
 
   private Node nodeAt(double px, double py) {
@@ -241,12 +354,13 @@ final class StructureCanvas extends JPanel {
 
   /**
    * The node at a world point for the node and line tools: the node there, or a new one, cutting the element
-   * it falls on (at the grid point when that is on the element).
+   * it falls on (at the grid point when that is on the element). A typed point is taken exactly: a node or an
+   * element must be right there, and a new node is not put on the grid.
    */
-  private Node nodeFor(Structure s, double x, double y) {
-    double tol = PICK / scale;
+  private Node nodeFor(Structure s, double x, double y, boolean typed) {
+    double tol = typed ? 1e-6 : PICK / scale;
     for (Node n : s.nodes) if (Math.hypot(n.x - x, n.y - y) < tol) return n;
-    double[] g = snap(x, y);
+    double[] g = typed ? new double[] {x, y} : snap(x, y);
     for (Element e : s.elements) {
       double dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, l2 = dx * dx + dy * dy;
       double t = ((x - e.a.x) * dx + (y - e.a.y) * dy) / l2;
@@ -288,24 +402,10 @@ final class StructureCanvas extends JPanel {
       }
       case NODE -> {
         double x = toWorldX(px), y = toWorldY(py);
-        if (node == null) app.edit(() -> app.select(nodeFor(s, x, y)));
+        if (node == null) app.edit(() -> app.select(nodeFor(s, x, y, false)));
         else app.select(node);
       }
-      case BEAM, BAR -> {
-        double[] p = pointAt(px, py);
-        if (chain == null) {
-          chain = p;
-          repaint();
-          return;
-        }
-        double[] from = chain;
-        if (Math.hypot(from[0] - p[0], from[1] - p[1]) < 1e-9) return;
-        app.edit(() -> {
-          Node a = nodeFor(s, from[0], from[1]), b = nodeFor(s, p[0], p[1]);
-          if (a != b && s.between(a, b) == null) app.select(s.addElement(a, b, tool == Tool.BAR));
-        });
-        chain = p;
-      }
+      case BEAM, BAR -> linePoint(pointAt(px, py), false);
       case ENCASTREMENT, PIVOT, ROLLER, SLIDER, SPRING -> {
         if (node == null) return;
         app.edit(() -> node.support = node.support == tool.support ? Support.NONE : tool.support);
@@ -360,6 +460,27 @@ final class StructureCanvas extends JPanel {
         else if (el != null) app.edit(() -> s.removeElement(el));
       }
     }
+  }
+
+  /** A point for the line tools, clicked or typed: starts a line there, or draws one to it from the last point. */
+  private void linePoint(double[] p, boolean typed) {
+    Structure s = app.structure();
+    Tool tool = app.tool();
+    if (chain == null) {
+      chain = p;
+      chainTyped = typed;
+      repaint();
+      return;
+    }
+    double[] from = chain;
+    boolean fromTyped = chainTyped;
+    if (Math.hypot(from[0] - p[0], from[1] - p[1]) < 1e-9) return;
+    app.edit(() -> {
+      Node a = nodeFor(s, from[0], from[1], fromTyped), b = nodeFor(s, p[0], p[1], typed);
+      if (a != b && s.between(a, b) == null) app.select(s.addElement(a, b, tool == Tool.BAR));
+    });
+    chain = p;
+    chainTyped = typed;
   }
 
   /** Adds a load the dialog returned (null: cancelled) and selects its element, whose panel lists its loads. */
@@ -521,12 +642,23 @@ final class StructureCanvas extends JPanel {
     if (checks) paintCheckLabels(g, app.design());
     paintTags(g);
     paintNodes(g, s);
+    double[] typed = exporting ? null : typedPoint();
     if (chain != null && !exporting) {
-      double[] p = pointAt(mouseX, mouseY);
+      // to the point typed, else to the pointer
+      double[] p = typed != null ? typed : pointAt(mouseX, mouseY);
       g.setColor(SELECT);
       g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[] {6, 4}, 0));
       g.draw(new Line2D.Double(sx(chain[0]), sy(chain[1]), sx(p[0]), sy(p[1])));
-      g.drawString(Fmt.num(Math.hypot(p[0] - chain[0], p[1] - chain[1])) + " m", (float) mouseX + 12, (float) mouseY - 8);
+      double l = Math.hypot(p[0] - chain[0], p[1] - chain[1]), a = Math.toDegrees(Math.atan2(p[1] - chain[1], p[0] - chain[0]));
+      g.drawString(Fmt.num(l) + " m  " + Fmt.num(Math.round(a * 100) / 100.0) + "°", (float) sx(p[0]) + 12, (float) sy(p[1]) - 8);
+    }
+    if (typed != null) {
+      g.setColor(SELECT);
+      g.setStroke(new BasicStroke(1.5f));
+      double x = sx(typed[0]), y = sy(typed[1]);
+      g.draw(new Line2D.Double(x - 6, y, x + 6, y));
+      g.draw(new Line2D.Double(x, y - 6, x, y + 6));
+      if (chain == null) g.drawString("(" + Fmt.num(typed[0]) + " ; " + Fmt.num(typed[1]) + ")", (float) x + 10, (float) y - 8);
     }
   }
 

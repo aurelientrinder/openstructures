@@ -32,6 +32,7 @@ import rdm.solver.ElementResult;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
 import rdm.solver.Solver;
+import rdm.ui.PointEntry;
 
 /** The solver against closed-form results of the RdM formulary. Run: verify.cmd (exit code 1 on a failure). */
 public final class Verify {
@@ -69,6 +70,7 @@ public final class Verify {
     roundTrip();
     sections();
     design();
+    typedPoints();
     texts();
     System.out.printf("%d checks, %d failure(s)%n", checks, failures);
     if (failures > 0) System.exit(1);
@@ -922,6 +924,36 @@ public final class Verify {
       }
     }
     near("cases: the roof's deflection, the worst SLS combination", Math.abs(roof.deflection), worst, 1e-9);
+  }
+
+  /** Points typed while drawing: absolute, relative, polar, a length towards the pointer; commas as each language has them. */
+  static void typedPoints() {
+    Tr.Lang was = Tr.lang();
+    try {
+      Tr.use(Tr.Lang.EN);
+      double[] from = {2, 3}, none = null;
+      point("typed x y", PointEntry.parse("4 5", none, none), 4, 5);
+      point("typed x,y (English: a comma separates)", PointEntry.parse("4,5", none, none), 4, 5);
+      point("typed x;y with decimals", PointEntry.parse(" 1.5 ; -2 ", none, none), 1.5, -2);
+      point("typed @dx dy", PointEntry.parse("@1 -2", from, none), 3, 1);
+      point("typed L<a", PointEntry.parse("4<90", from, none), 2, 7);
+      point("typed @L<a", PointEntry.parse("@2<180", from, none), 0, 3);
+      point("typed L towards the pointer", PointEntry.parse("5", new double[] {0, 0}, new double[] {6, 8}), 3, 4);
+      check("typed: nothing to measure from", PointEntry.parse("@1 1", none, none) == null && PointEntry.parse("3", none, new double[] {1, 1}) == null
+          && PointEntry.parse("3<45", none, none) == null ? 1 : 0, 1);
+      check("typed: not a point", PointEntry.parse("a b", from, from) == null && PointEntry.parse("1 2 3", from, from) == null
+          && PointEntry.parse("", from, from) == null ? 1 : 0, 1);
+      Tr.use(Tr.Lang.FR);
+      point("typed in French: 2,5 3 (a decimal comma)", PointEntry.parse("2,5 3", none, none), 2.5, 3);
+      point("typed in French: 2,5;-1,25", PointEntry.parse("2,5;-1,25", none, none), 2.5, -1.25);
+    } finally {
+      Tr.use(was);
+    }
+  }
+
+  static void point(String what, double[] got, double x, double y) {
+    check(what + ": x", got == null ? Double.NaN : got[0], x);
+    check(what + ": y", got == null ? Double.NaN : got[1], y);
   }
 
   static void sections() {
