@@ -49,6 +49,7 @@ final class SectionView extends JComponent {
 
   /** The outline, mm, y up (as drawn: turned if it is). */
   static Shape shape(Section s) {
+    if (s.kind().catalogued()) return catalogued(s);
     double[][] rs = s.rectangles();
     if (rs != null) {
       Area a = new Area();
@@ -64,14 +65,45 @@ final class SectionView extends JComponent {
         a.subtract(new Area(new Ellipse2D.Double(t, t, s.p1() - 2 * t, s.p1() - 2 * t)));
         yield a;
       }
-      case IPE -> {
-        // the table has no widths: drawn with an IPE's usual proportions
-        double h = s.p1(), b = 0.5 * h, tw = 0.035 * h, tf = 0.05 * h;
-        yield shape(new Section(Section.Kind.I_SECTION, h, b, tw, tf, false));
-      }
       // only A, I, v: a stand-in, as high as 2 v
       default -> new RoundRectangle2D.Double(0, 0, s.p3() * 10, s.p3() * 20, s.p3() * 4, s.p3() * 4);
     };
+  }
+
+  /** A catalogue section: its I or U with the root fillets, its rectangular hollow with round corners, its tube. */
+  private static Shape catalogued(Section s) {
+    Section like = s.like().turned(false);
+    double h = like.p1(), b = like.p2(), t = like.p3(), r = s.cornerRadius();
+    Area a;
+    switch (like.kind()) {
+      case I_SECTION, CHANNEL -> {
+        a = new Area(shape(like));
+        double tf = like.p4(), web = like.kind() == Section.Kind.CHANNEL ? 0 : (b - t) / 2;
+        for (double y : new double[] {tf, h - tf}) {
+          int up = y == tf ? 1 : -1;
+          fillet(a, web + t, y, 1, up, r);
+          if (web > 0) fillet(a, web, y, -1, up, r);
+        }
+      }
+      case BOX -> {
+        a = new Area(new RoundRectangle2D.Double(0, 0, b, h, 2 * r, 2 * r));
+        a.subtract(new Area(new RoundRectangle2D.Double(t, t, b - 2 * t, h - 2 * t, 2 * t, 2 * t)));
+      }
+      default -> {
+        return shape(like);
+      }
+    }
+    // the same quarter turn as the rectangles': z ↔ y
+    if (s.turned()) a.transform(new AffineTransform(0, 1, 1, 0, 0, 0));
+    return a;
+  }
+
+  /** Fills the corner at (z, y) between two faces with a fillet of radius r, towards dz, dy (±1). */
+  private static void fillet(Area a, double z, double y, int dz, int dy, double r) {
+    if (r <= 0) return;
+    Area f = new Area(new Rectangle2D.Double(Math.min(z, z + dz * r), Math.min(y, y + dy * r), r, r));
+    f.subtract(new Area(new Ellipse2D.Double(z + dz * r - r, y + dy * r - r, 2 * r, 2 * r)));
+    a.add(f);
   }
 
   /** A dimension: its symbol, the two points measured (mm), vertical or not, and where its line stands. */
@@ -86,6 +118,7 @@ final class SectionView extends JComponent {
   }
 
   private static List<Dim> dims(Section s) {
+    if (s.kind().catalogued()) return dims(s.like());
     double p1 = s.p1(), p2 = s.p2(), p3 = s.p3(), p4 = s.p4();
     List<Dim> d = new ArrayList<>();
     switch (s.kind()) {
@@ -115,7 +148,6 @@ final class SectionView extends JComponent {
         d.add(new Dim("tw", web, 0.3 * p1, web + p3, 0.3 * p1, false, 0.3 * p1));
         d.add(new Dim("tf", p2, p1 - p4, p2, p1, true, p2 + off * 0.6));
       }
-      case IPE -> d.add(new Dim("h", 0.25 * s.p1() - 0.0175 * s.p1(), 0, 0, s.p1(), true, -0.18 * s.p1()));
       case CUSTOM -> d.add(new Dim("v", s.p3() * 10, s.p3() * 10, s.p3() * 10, s.p3() * 20, true, s.p3() * 13));
     }
     if (s.turned()) d.replaceAll(Dim::turned);
@@ -163,7 +195,6 @@ final class SectionView extends JComponent {
 
     // the neutral axis z (the bending axis) through the centroid G, with the vertical through G
     double[] c = {b.getCenterX(), s.centroid()};
-    if (s.rectangles() == null && !stand) c[1] = b.getCenterY();
     double[] gp = new double[2];
     t.transform(c, 0, gp, 0, 1);
     Rectangle2D db = drawn.getBounds2D();

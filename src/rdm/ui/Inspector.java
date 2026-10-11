@@ -348,16 +348,10 @@ final class Inspector extends JPanel implements Scrollable {
     add(line, lc);
     row++;
     Section.Kind kind = e.section.kind();
-    if (kind == Section.Kind.IPE) {
-      JComboBox<String> size = new JComboBox<>();
-      for (double[] r : Section.IPE_TABLE) size.addItem("IPE " + (int) r[0]);
-      size.setSelectedItem("IPE " + (int) e.section.p1());
-      size.addActionListener(ev -> {
-        double h = Section.IPE_TABLE[size.getSelectedIndex()][0];
-        if (h != e.section.p1()) app.edit(() -> e.section = new Section(Section.Kind.IPE, h, 0, 0));
-      });
-      field(tr("insp.profile"), size);
-    }
+    SectionDialog.pickers(e.section, v -> {
+      Section turned = v.turned(e.section.turned());
+      if (!turned.equals(e.section)) app.edit(() -> e.section = turned);
+    }).forEach(this::field);
     for (int i = 0; i < kind.params.size(); i++) {
       int which = i;
       number(tr("dim." + kind.params.get(i)), () -> e.section.param(which), v -> e.section = e.section.with(which, v));

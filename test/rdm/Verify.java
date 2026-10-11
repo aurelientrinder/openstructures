@@ -632,6 +632,7 @@ public final class Verify {
 
   /** The templates' area, inertia and extreme fibre, against the textbook formulas (mm, then SI). */
   static void sections() {
+    catalogues();
     Section rect = new Section(Section.Kind.RECT, 50, 100, 0);
     section("rectangle 50 × 100", rect, 5000, 50 * Math.pow(100, 3) / 12, 50);
     section("rectangle 50 × 100 turned", rect.turned(true), 5000, 100 * Math.pow(50, 3) / 12, 25);
@@ -687,6 +688,82 @@ public final class Verify {
         + "node 2.0 0.0 NONE 90.0 0.0 -1000.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\nelem 1 2 0 0 RECT 50.0 100.0 0.0 70000.0 2700.0\n");
     check("file version 2: section", v2.elements.get(0).section.inertia(), 50 * Math.pow(100, 3) / 12 * 1e-12);
     check("file version 2: material", v2.elements.get(0).material.rho(), 2700);
+  }
+
+  /**
+   * The catalogues against their sources: rows of the ArcelorMittal sales programme 2024-1 as printed there, every
+   * rolled row against its own dimensions, and the hollow sections' EN 10210-2 Annex A formulae against published
+   * tables (rounded to 3 or 4 figures).
+   */
+  static void catalogues() {
+    // A (cm²), Iy (cm⁴), Wel.y (cm³), Iz (cm⁴), Wel.z (cm³): the sales programme's pages of properties
+    rolled(new Section(Section.Kind.IPE, 300, 0, 0), 53.8, 8356, 557, 603.7, 80.5);
+    rolled(new Section(Section.Kind.HEA, 200, 0, 0), 53.8, 3692, 388.6, 1335, 133.5);
+    rolled(new Section(Section.Kind.HEA, 400, 0, 0), 159, 45060, 2311, 8563, 570.9);
+    rolled(new Section(Section.Kind.HEB, 160, 0, 0), 54.3, 2491, 311.4, 889.2, 111.1);
+    rolled(new Section(Section.Kind.HEB, 300, 0, 0), 149.1, 25160, 1677, 8562, 570.8);
+    rolled(new Section(Section.Kind.UPN, 100, 0, 0), 13.5, 206, 41.2, 29.3, 8.49);
+    rolled(new Section(Section.Kind.UPN, 200, 0, 0), 32.2, 1910, 191, 148, 27);
+    rolled(new Section(Section.Kind.UPN, 300, 0, 0), 58.8, 8030, 535, 495, 67.8);
+    // turned, the U's centroid is ys = 2,0 cm from the back of its web (to the table's 1 mm)
+    near("UPN 200 turned: centroid at ys", new Section(Section.Kind.UPN, 200, 0, 0).turned(true).centroid(), 20, 0.025);
+
+    // each row against its dimensions: A with the root fillets, v = h/2 (and b/2 turned, but for the U)
+    for (Section.Kind k : new Section.Kind[] {Section.Kind.IPE, Section.Kind.HEA, Section.Kind.HEB, Section.Kind.UPN}) {
+      int bad = 0;
+      for (Section s : Section.sizes(k)) {
+        Section like = s.like();
+        double h = like.p1(), b = like.p2(), tw = like.p3(), tf = like.p4(), r = s.cornerRadius();
+        double a = (2 * b * tf + (h - 2 * tf) * tw + (4 - Math.PI) * r * r) * 1e-6;
+        if (k != Section.Kind.UPN && Math.abs(s.area() / a - 1) > 0.01) bad++;
+        if (Math.abs(s.fibre() / (h / 2e3) - 1) > 0.005) bad++;
+        if (k != Section.Kind.UPN && Math.abs(s.turned(true).fibre() / (b / 2e3) - 1) > 0.005) bad++;
+      }
+      check(k + ": " + Section.sizes(k).size() + " rows consistent with their dimensions", bad, 0);
+    }
+
+    // CHS: EN 10210-2:2019 Table B.1; SHS, RHS: the Steel for Life Blue Book's hot-finished tables
+    hollow(new Section(Section.Kind.CHS, 60.3, 4, 0), 7.07, 28.2, 9.34, 28.2, 9.34);
+    hollow(new Section(Section.Kind.CHS, 114.3, 6.3, 0), 21.4, 313, 54.7, 313, 54.7);
+    hollow(new Section(Section.Kind.CHS, 168.3, 8, 0), 40.3, 1297, 154, 1297, 154);
+    hollow(new Section(Section.Kind.CHS, 219.1, 10, 0), 65.7, 3598, 328, 3598, 328);
+    hollow(new Section(Section.Kind.CHS, 323.9, 12.5, 0), 122, 14850, 917, 14850, 917);
+    hollow(new Section(Section.Kind.SHS, 100, 5, 0), 18.7, 279, 55.9, 279, 55.9);
+    hollow(new Section(Section.Kind.SHS, 200, 10, 0), 74.9, 4470, 447, 4470, 447);
+    hollow(new Section(Section.Kind.SHS, 300, 12.5, 0), 142, 19400, 1300, 19400, 1300);
+    hollow(new Section(Section.Kind.RHS, 120, 80, 5, 0, false), 18.7, 365, 60.9, 193, 48.2);
+    hollow(new Section(Section.Kind.RHS, 200, 100, 8, 0, false), 44.8, 2230, 223, 739, 148);
+    hollow(new Section(Section.Kind.RHS, 300, 200, 10, 0, false), 94.9, 11800, 788, 6280, 628);
+    hollow(new Section(Section.Kind.RHS, 400, 200, 12.5, 0, false), 142, 29100, 1450, 9740, 974);
+    int bad = 0;
+    for (Section.Kind k : new Section.Kind[] {Section.Kind.SHS, Section.Kind.RHS, Section.Kind.CHS}) {
+      for (Section s : Section.sizes(k)) if (s.problem() != null || !(s.inertia() > 0)) bad++;
+    }
+    check("hollow sections: every size is a section", bad, 0);
+
+    Structure f = new Structure();
+    f.addElement(f.addNode(0, 0), f.addNode(2, 0), false).section = new Section(Section.Kind.HEB, 300, 0, 0, 0, true);
+    check("turned HEB 300 read back from the file", StructureFile.read(StructureFile.write(f)).elements.get(0).section.equals(f.elements.get(0).section) ? 1 : 0, 1);
+  }
+
+  /** A rolled section's table values, as printed: exactly, about both axes (Wel = I / v). */
+  private static void rolled(Section s, double area, double iy, double wy, double iz, double wz) {
+    Section t = s.turned(true);
+    check(s.label() + ": A", s.area(), area * 1e-4);
+    check(s.label() + ": Iy", s.inertia(), iy * 1e-8);
+    check(s.label() + ": Wel.y", s.inertia() / s.fibre(), wy * 1e-6);
+    check(s.label() + ": Iz", t.inertia(), iz * 1e-8);
+    check(s.label() + ": Wel.z", t.inertia() / t.fibre(), wz * 1e-6);
+  }
+
+  /** A hollow section against a table that rounds to 3 figures: within half a percent, about both axes. */
+  private static void hollow(Section s, double area, double iy, double wy, double iz, double wz) {
+    Section t = s.turned(true);
+    near(s.label() + ": A", s.area(), area * 1e-4, 0.005);
+    near(s.label() + ": Iy", s.inertia(), iy * 1e-8, 0.005);
+    near(s.label() + ": Wel.y", s.inertia() / s.fibre(), wy * 1e-6, 0.005);
+    near(s.label() + ": Iz", t.inertia(), iz * 1e-8, 0.005);
+    near(s.label() + ": Wel.z", t.inertia() / t.fibre(), wz * 1e-6, 0.005);
   }
 
   private static void section(String name, Section s, double area, double inertia, double fibre) {
@@ -769,6 +846,17 @@ public final class Verify {
     if (!ok) {
       failures++;
       System.out.printf("FAIL   %s: got %.12g, expected %.12g%n", what, got, expected);
+    } else {
+      System.out.printf("ok     %s%n", what);
+    }
+  }
+
+  /** As check, within a fraction rel of the expected value (a value from a table, rounded). */
+  static void near(String what, double got, double expected, double rel) {
+    checks++;
+    if (!(Math.abs(got - expected) <= rel * Math.abs(expected))) {
+      failures++;
+      System.out.printf("FAIL   %s: got %.12g, expected %.12g within %.1f %%%n", what, got, expected, rel * 100);
     } else {
       System.out.printf("ok     %s%n", what);
     }
