@@ -185,10 +185,12 @@ final class StructureCanvas extends JPanel {
       ox = 80;
       oy = h - 80;
     } else {
+      // more room above than below: the titles are written at the top, over the labels of loads on the top nodes
+      double top = 140, bottom = 100;
       double bw = Math.max(b[2] - b[0], 1), bh = Math.max(b[3] - b[1], 1);
-      scale = Math.min((w - 200) / bw, (h - 200) / bh);
+      scale = Math.min((w - 200) / bw, (h - top - bottom) / bh);
       ox = w / 2.0 - (b[0] + b[2]) / 2 * scale;
-      oy = h / 2.0 + (b[1] + b[3]) / 2 * scale;
+      oy = top + (h - top - bottom - (b[3] - b[1]) * scale) / 2 + b[3] * scale;
     }
     repaint();
   }
