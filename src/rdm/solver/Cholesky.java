@@ -61,4 +61,53 @@ final class Cholesky {
     for (int i = 0; i < n; i++) y[i] *= d[i];
     return y;
   }
+
+  /**
+   * For the generalized problem A x = λ B x, A definite (no null pivot), B symmetric: the symmetric C whose
+   * eigenpairs (μ, y) give λ = 1/μ and x = back(y). With A's scaling D, D A D = L Lᵀ, C = L⁻¹ (D B D) L⁻ᵀ.
+   */
+  double[][] reduce(double[][] B) {
+    double[][] X = new double[n][];
+    for (int i = 0; i < n; i++) {
+      double[] row = new double[n];
+      for (int j = 0; j < n; j++) row[j] = d[i] * B[i][j] * d[j];
+      for (int k = 0; k < i; k++) {
+        double l = L[i][k];
+        if (l == 0) continue;
+        double[] xk = X[k];
+        for (int j = 0; j < n; j++) row[j] -= l * xk[j];
+      }
+      for (int j = 0; j < n; j++) row[j] /= L[i][i];
+      X[i] = row;
+    }
+    // C = L⁻¹ Xᵀ, X = L⁻¹ D B D: the same forward substitution on the columns of X
+    double[][] C = new double[n][n];
+    for (int i = 0; i < n; i++) {
+      double[] row = C[i];
+      for (int j = 0; j < n; j++) row[j] = X[j][i];
+      for (int k = 0; k < i; k++) {
+        double l = L[i][k];
+        if (l == 0) continue;
+        double[] ck = C[k];
+        for (int j = 0; j < n; j++) row[j] -= l * ck[j];
+      }
+      for (int j = 0; j < n; j++) row[j] /= L[i][i];
+    }
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j < i; j++) C[i][j] = C[j][i] = (C[i][j] + C[j][i]) / 2;
+    }
+    return C;
+  }
+
+  /** x = D L⁻ᵀ y: an eigenvector of reduce()'s matrix back to the unknowns of A x = λ B x. */
+  double[] back(double[] y) {
+    double[] z = new double[n];
+    for (int i = n - 1; i >= 0; i--) {
+      double s = y[i];
+      for (int k = i + 1; k < n; k++) s -= L[k][i] * z[k];
+      z[i] = s / L[i][i];
+    }
+    for (int i = 0; i < n; i++) z[i] *= d[i];
+    return z;
+  }
 }

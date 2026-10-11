@@ -37,6 +37,7 @@ import rdm.model.NodeLoad;
 import rdm.model.Section;
 import rdm.model.Structure;
 import rdm.model.Support;
+import rdm.solver.Buckling;
 import rdm.solver.ElementResult;
 import rdm.solver.Envelope;
 import rdm.solver.Solution;
@@ -78,6 +79,7 @@ final class Inspector extends JPanel implements Scrollable {
     k.add(System.identityHashCode(app.shown()));
     k.add(sol.status);
     k.add(app.envelopeShown());
+    k.add(app.buckling() == null ? "no buckling" : app.buckling().status);
     if (sel instanceof Node n) k.add(n.support);
     if (sel instanceof Element e) {
       k.add(e.section.kind());
@@ -144,6 +146,25 @@ final class Inspector extends JPanel implements Scrollable {
     cc.gridwidth = 2;
     add(cases, cc);
     row++;
+
+    Buckling bk = app.buckling();
+    if (bk != null && app.solution().ok()) {
+      heading(tr("insp.buckling"));
+      if (bk.ok()) {
+        for (int i = 0; i < Buckling.MODES; i++) {
+          int mode = i;
+          value(tr("insp.bucklingMode", i + 1), () -> {
+            Buckling b = app.buckling();
+            return b == null || mode >= b.modes.size() ? "—" : Fmt.num(b.modes.get(mode).factor);
+          });
+        }
+        value(tr("insp.safety"), () -> app.buckling() == null ? "—" : Fmt.num(app.buckling().factor()));
+        if (app.bucklingCombination() != null) liveNote(() -> app.bucklingCombination() == null ? "" : tr("insp.bucklingIn", app.bucklingCombination().name));
+        note(tr("insp.bucklingHelp"), false);
+      } else {
+        note(tr("insp.bucklingNone"), false);
+      }
+    }
 
     heading(tr("insp.howTo"));
     note(tr("insp.help1"), false);
@@ -421,6 +442,23 @@ final class Inspector extends JPanel implements Scrollable {
       value(tr("insp.maxM"), () -> result(e, r -> Fmt.kNm(r.maxAbsM())));
       value(tr("insp.sigma"), () -> result(e, r -> Fmt.MPa(r.sigmaMax())));
     }
+
+    // buckling: its compression at λcr of the first mode, its buckling length, and Euler's load of the element alone
+    if (app.buckling() != null && app.buckling().ok()) {
+      heading(tr("insp.bucklingElement"));
+      value(tr("insp.compression"), () -> member(e, m -> Fmt.kN(m.N())));
+      value(tr("insp.Ncr"), () -> member(e, m -> Fmt.kN(m.critical(app.buckling().factor()))));
+      value(tr("insp.Lf"), () -> member(e, m -> Fmt.num(m.length(app.buckling().factor())) + " m (" + Fmt.num(m.length(app.buckling().factor()) / m.L()) + " L)"));
+      value(tr("insp.euler"), () -> member(e, m -> Fmt.kN(m.euler())));
+      note(tr("insp.bucklingElementHelp"), true);
+    }
+  }
+
+  /** A buckling result of the element, "—" when it is not compressed. */
+  private String member(Element e, java.util.function.Function<Buckling.Member, String> f) {
+    Buckling bk = app.buckling();
+    Buckling.Member m = bk == null || !bk.ok() ? null : bk.of(e);
+    return m == null || !m.compressed() ? "—" : f.apply(m);
   }
 
   private interface At {

@@ -25,6 +25,8 @@ public final class Examples {
     ALL.put("mixedLoads", Examples::mixedLoads);
     ALL.put("springAndSettlement", Examples::springAndSettlement);
     ALL.put("portalCases", Examples::portalCases);
+    ALL.put("eulerColumn", Examples::eulerColumn);
+    ALL.put("bucklingPortal", Examples::bucklingPortal);
   }
 
   /** The title of an example, in the interface's language. */
@@ -159,6 +161,36 @@ public final class Examples {
     left.loads.add(ElementLoad.Distributed.uniform(w, 2e3, 0));
     right.loads.add(ElementLoad.Distributed.uniform(w, 1e3, 0));
     s.generateCombinations();
+    return s;
+  }
+
+  /**
+   * Euler's column: a round tube 60 × 4, 3 m high, pinned at its foot, its head held sideways by a roller (normal
+   * along x), 40 kN down on it. π²EI/L² = 63.9 kN: λcr = 1.6.
+   */
+  static Structure eulerColumn() {
+    Structure s = new Structure();
+    Node a = s.addNode(0, 0), b = s.addNode(0, 3);
+    a.support = Support.PIVOT;
+    b.support = Support.APPUI_SIMPLE;
+    b.supportAngle = 0;
+    load(b, s).fy = -40e3;
+    s.addElement(a, b, false).section = new Section(Section.Kind.TUBE, 60, 4, 0);
+    return s;
+  }
+
+  /**
+   * A portal frame with fixed feet, IPE 200 columns 4 m high and an IPE 240 beam 6 m long, 500 kN on the head of
+   * each column: it buckles sideways (sway), each column's buckling length more than its height; λcr = 4.
+   */
+  static Structure bucklingPortal() {
+    Structure s = new Structure();
+    Node a = s.addNode(0, 0), b = s.addNode(0, 4), c = s.addNode(6, 4), d = s.addNode(6, 0);
+    a.support = d.support = Support.ENCASTREMENT;
+    load(b, s).fy = load(c, s).fy = -500e3;
+    s.addElement(a, b, false);
+    s.addElement(b, c, false).section = new Section(Section.Kind.IPE, 240, 0, 0);
+    s.addElement(c, d, false);
     return s;
   }
 }
